@@ -14,6 +14,7 @@ from decimal import Decimal
 from app.db.models import UsageRecord
 from app.providers.pricing.base import PricingProvider
 from app.repositories.usage_repository import UsageRepository
+from app.services.alert_service import AlertService
 from app.services.cost_calculator import CostCalculator
 from app.services.reconciliation_service import ReconciliationService
 
@@ -23,9 +24,15 @@ def _utcnow() -> datetime:
 
 
 class UsageService:
-    def __init__(self, pricing: PricingProvider, repository: UsageRepository):
+    def __init__(
+        self,
+        pricing: PricingProvider,
+        repository: UsageRepository,
+        alerts: AlertService | None = None,
+    ):
         self._pricing = pricing
         self._repository = repository
+        self._alerts = alerts
 
     async def record(
         self,
@@ -89,4 +96,10 @@ class UsageService:
             status=status,
             completed_at=_utcnow(),
         )
-        return await self._repository.add(record)
+        record = await self._repository.add(record)
+
+        # Fire a cost anomaly alert on newly-created SUCCESS rows (Phase 13).
+        # Idempotent retries return early above, so alerts never double-fire.
+        if self._alerts is not None and record.status == "SUCCESS":
+            await self._alerts.maybe_cost_anomaly(record)
+        return record
