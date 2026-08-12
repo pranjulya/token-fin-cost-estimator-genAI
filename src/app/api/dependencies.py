@@ -11,15 +11,26 @@ import uuid
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import get_db_session
 from app.providers.pricing.database_pricing import DatabasePricingProvider
+from app.repositories.alert_repository import AlertRepository
 from app.repositories.budget_repository import BudgetRepository
 from app.repositories.pricing_repository import PricingRepository
 from app.repositories.usage_repository import UsageRepository
 from app.services.aggregation_service import AggregationService
+from app.services.alert_service import AlertService
 from app.services.budget_service import BudgetService
 from app.services.cost_estimator import CostEstimator
 from app.services.usage_service import UsageService
+
+
+def _alert_service(session: AsyncSession) -> AlertService:
+    return AlertService(
+        repository=AlertRepository(session),
+        usage_repository=UsageRepository(session),
+        settings=get_settings(),
+    )
 
 
 def _pricing_provider(session: AsyncSession) -> DatabasePricingProvider:
@@ -36,17 +47,25 @@ async def estimator_dep(session: AsyncSession = Depends(get_db_session)) -> Cost
 
 
 async def usage_service_dep(session: AsyncSession = Depends(get_db_session)) -> UsageService:
-    return UsageService(pricing=_pricing_provider(session), repository=UsageRepository(session))
+    return UsageService(
+        pricing=_pricing_provider(session),
+        repository=UsageRepository(session),
+        alerts=_alert_service(session),
+    )
 
 
 async def aggregation_dep(session: AsyncSession = Depends(get_db_session)) -> AggregationService:
     return AggregationService(UsageRepository(session))
 
 
+async def alert_service_dep(session: AsyncSession = Depends(get_db_session)) -> AlertService:
+    return _alert_service(session)
+
+
 async def budget_service_dep(
     session: AsyncSession = Depends(get_db_session),
 ) -> BudgetService:
-    return BudgetService(BudgetRepository(session))
+    return BudgetService(BudgetRepository(session), alerts=_alert_service(session))
 
 
 async def budget_repo_dep(session: AsyncSession = Depends(get_db_session)) -> BudgetRepository:

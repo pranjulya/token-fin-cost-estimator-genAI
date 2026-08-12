@@ -14,8 +14,9 @@ from decimal import Decimal
 
 from app.db.models import Budget
 from app.domain import budget as budget_policy
-from app.domain.budget import BudgetDecision
+from app.domain.budget import ALLOW, BudgetDecision
 from app.repositories.budget_repository import BudgetRepository
+from app.services.alert_service import AlertService
 
 
 def _utcnow() -> datetime:
@@ -34,8 +35,9 @@ def period_key_for(period_type: str, when: datetime | None = None) -> str:
 
 
 class BudgetService:
-    def __init__(self, repository: BudgetRepository):
+    def __init__(self, repository: BudgetRepository, alerts: AlertService | None = None):
         self._repository = repository
+        self._alerts = alerts
 
     async def find_for(self, scope_type: str, scope_id: str) -> Budget | None:
         """Find the active budget for a scope, or None if none is configured."""
@@ -77,6 +79,16 @@ class BudgetService:
             decision=decision.status,
             request_id=request_id,
         )
+
+        # Fire a budget threshold alert on non-ALLOW decisions (Phase 13).
+        if self._alerts is not None and decision.status != ALLOW:
+            await self._alerts.maybe_budget_threshold(
+                budget=budget,
+                decision=decision,
+                period_key=period_key,
+                requested_amount=amount,
+                request_id=request_id,
+            )
         return decision
 
     async def commit(self, budget: Budget, amount: Decimal, request_id: str | None = None) -> None:

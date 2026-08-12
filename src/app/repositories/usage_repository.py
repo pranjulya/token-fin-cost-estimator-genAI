@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,51 @@ class UsageRepository:
         self._session.add(record)
         await self._session.flush()
         return record
+
+    async def historical_avg_cost(
+        self,
+        *,
+        provider: str,
+        model: str,
+        exclude_request_id: str | None = None,
+        limit: int = 100,
+        isolate: bool = True,
+    ) -> tuple[Decimal | None, int]:
+        """AVG(actual_cost) over the most recent SUCCESS rows for (provider, model).
+
+        Model-level baseline (not scoped by team/app). Excludes the just-inserted
+        request_id so a new row never appears in its own baseline. Returns
+        (avg, sample_count); avg is None when there are no samples.
+
+        isolate=True runs the SELECT inside a savepoint so a query failure cannot
+        poison the outer money transaction (alert soft-fail path).
+        """
+
+        async def _run() -> tuple[Decimal | None, int]:
+            inner = select(UsageRecord.actual_cost).where(
+                UsageRecord.status == "SUCCESS",
+                UsageRecord.provider == provider,
+                UsageRecord.model == model,
+                UsageRecord.actual_cost.is_not(None),
+            )
+            if exclude_request_id is not None:
+                inner = inner.where(UsageRecord.request_id != exclude_request_id)
+            inner = inner.order_by(UsageRecord.created_at.desc()).limit(limit)
+
+            sub = inner.subquery()
+            row = (
+                await self._session.execute(
+                    select(func.avg(sub.c.actual_cost), func.count()).select_from(sub)
+                )
+            ).one()
+            avg = row[0] if row[0] is not None else None
+            count = int(row[1] or 0)
+            return avg, count
+
+        if isolate:
+            async with self._session.begin_nested():
+                return await _run()
+        return await _run()
 
     async def count(self) -> int:
         return await self._session.scalar(select(func.count()).select_from(UsageRecord)) or 0

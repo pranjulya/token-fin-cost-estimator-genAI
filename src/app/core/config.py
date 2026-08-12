@@ -1,5 +1,6 @@
 """Application configuration loaded from environment / .env."""
 
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import Field
@@ -28,6 +29,18 @@ class Settings(BaseSettings):
 
     # CORS (empty = disabled). Comma-separated origins.
     cors_origins: str = ""
+
+    # Alert / anomaly tuning (Phase 13). Env prefix APP_ (e.g. APP_ALERTS_ENABLED).
+    # alerts_enabled is read once at startup (get_settings is lru-cached) — a
+    # change requires a process restart.
+    alerts_enabled: bool = True
+    alert_anomaly_min_samples: int = 10
+    alert_anomaly_lookback: int = 100
+    alert_anomaly_multiplier: Decimal = Decimal("50")
+    alert_anomaly_absolute_min_usd: Decimal = Decimal("5.00")
+    alert_anomaly_critical_usd: Decimal = Decimal("10.00")
+    # Stored variance_percent threshold; 400 => actual >= 5x estimate.
+    alert_anomaly_variance_percent: Decimal = Decimal("400")
 
     @property
     def cors_origin_list(self) -> list[str]:
