@@ -13,9 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.providers.pricing.database_pricing import DatabasePricingProvider
+from app.repositories.budget_repository import BudgetRepository
 from app.repositories.pricing_repository import PricingRepository
 from app.repositories.usage_repository import UsageRepository
 from app.services.aggregation_service import AggregationService
+from app.services.budget_service import BudgetService
 from app.services.cost_estimator import CostEstimator
 from app.services.usage_service import UsageService
 
@@ -39,6 +41,16 @@ async def usage_service_dep(session: AsyncSession = Depends(get_db_session)) -> 
 
 async def aggregation_dep(session: AsyncSession = Depends(get_db_session)) -> AggregationService:
     return AggregationService(UsageRepository(session))
+
+
+async def budget_service_dep(
+    session: AsyncSession = Depends(get_db_session),
+) -> BudgetService:
+    return BudgetService(BudgetRepository(session))
+
+
+async def budget_repo_dep(session: AsyncSession = Depends(get_db_session)) -> BudgetRepository:
+    return BudgetRepository(session)
 
 
 async def pricing_repo_dep(session: AsyncSession = Depends(get_db_session)) -> PricingRepository:
