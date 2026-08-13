@@ -43,6 +43,42 @@ class BudgetService:
         """Find the active budget for a scope, or None if none is configured."""
         return await self._repository.get_active(scope_type, scope_id)
 
+    async def find_applicable(
+        self, *, team_id: str | None, application_id: str | None
+    ) -> Budget | None:
+        """Encode the TEAM-then-APPLICATION lookup so estimate and generate agree.
+
+        First match wins: a TEAM budget shadows an APPLICATION budget.
+        """
+        for scope_type, scope_id in (("TEAM", team_id), ("APPLICATION", application_id)):
+            if scope_id:
+                budget = await self.find_for(scope_type, scope_id)
+                if budget is not None:
+                    return budget
+        return None
+
+    async def evaluate(self, budget: Budget, amount: Decimal) -> BudgetDecision:
+        """Pure snapshot decision for a preflight estimate (PRD Phase 15 / K2).
+
+        Reads the current consumption without locking and runs the policy —
+        no reserved mutation, no budget events, no alerts. A slightly stale
+        snapshot is acceptable: evaluate is advisory; generate's ``reserve``
+        is the race-safe enforcement point.
+        """
+        period_key = period_key_for(budget.period_type)
+        row = await self._repository.get_consumption(budget.id, period_key)
+        reserved = (row.reserved_amount if row is not None else Decimal("0")) or Decimal("0")
+        committed = (row.committed_amount if row is not None else Decimal("0")) or Decimal("0")
+        return budget_policy.decide(
+            limit=budget.limit_amount,
+            committed=committed,
+            reserved=reserved,
+            requested=amount,
+            warning=budget.warning_threshold,
+            critical=budget.critical_threshold,
+            enforcement_mode=budget.enforcement_mode,
+        )
+
     async def reserve(
         self, budget: Budget, amount: Decimal, request_id: str | None
     ) -> BudgetDecision:

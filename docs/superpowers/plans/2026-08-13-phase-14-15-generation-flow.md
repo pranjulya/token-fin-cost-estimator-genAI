@@ -4,9 +4,11 @@
 
 **Goal:** Add an `LLMProvider` + OpenAI adapter and `POST /v1/generate` that runs estimate → reserve → mid-commit → LLM → `record_new` → `settle`, while making `POST /v1/cost/estimate` evaluate-only so it no longer leaks reservations.
 
-**Architecture:** Protocol in `providers/llm/base.py`; official SDK only in `openai_provider.py`; `GenerationService` orchestrates existing `CostEstimator` / `BudgetService` / `UsageService` and never holds an `AsyncSession`. After a successful reserve, `session.commit()` releases `FOR UPDATE` before the HTTP call. `settle` always consumes this request’s `E` from reserved and adds `A` to committed (`apply_overage` when `A > E`).
+**Architecture:** Protocol in `providers/llm/base.py`; the OpenAI adapter uses **httpx** (no `openai` SDK in v1 — decision recorded 2026-08-13; if the deployed service later needs it, swap to the official `openai` SDK inside `openai_provider.py` only, keeping the `LLMProvider` Protocol boundary intact). `GenerationService` orchestrates existing `CostEstimator` / `BudgetService` / `UsageService` and never holds an `AsyncSession`. After a successful reserve, `session.commit()` releases `FOR UPDATE` before the HTTP call. `settle` always consumes this request’s `E` from reserved and adds `A` to committed (`apply_overage` when `A > E`).
 
-**Tech Stack:** FastAPI, SQLAlchemy 2 async, Pydantic v2, Postgres, Decimal money, structlog, official `openai` AsyncOpenAI, pytest/pytest-asyncio, httpx ASGI client.
+**Tech Stack:** FastAPI, SQLAlchemy 2 async, Pydantic v2, Postgres, Decimal money, structlog, **httpx** (runtime dep) for the OpenAI Chat Completions call, pytest/pytest-asyncio, httpx ASGI client.
+
+> **Transport decision (locked):** Use httpx for the OpenAI provider. Do **not** add the `openai` SDK to `pyproject.toml`. Promote `httpx>=0.27` to runtime `dependencies` (it is currently dev-only). If a need arises post-deployment, swap to the official `openai` SDK **inside `openai_provider.py` only** — the Protocol, factory, `GenerationService`, tests, and money math stay unchanged. This is the single deviation from the spec's K7/A4 (which chose the official SDK); all other spec/plan content is followed as written.
 
 **Spec:** `docs/superpowers/specs/2026-08-13-phase-14-15-generation-flow-design.md`
 

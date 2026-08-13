@@ -86,6 +86,18 @@ class BudgetRepository:
 
     # --- consumption (Postgres-atomic) --------------------------------------
 
+    async def get_consumption(self, budget_id: int, period_key: str) -> BudgetConsumption | None:
+        """Non-locking read of the consumption counter for a (budget, period).
+
+        Used by the evaluate-only path (estimate preflight); never FOR UPDATE.
+        Returns None when no reservation has been made for the period.
+        """
+        stmt = select(BudgetConsumption).where(
+            BudgetConsumption.budget_id == budget_id,
+            BudgetConsumption.period_key == period_key,
+        )
+        return await self._session.scalar(stmt)
+
     async def lock_consumption(self, budget_id: int, period_key: str) -> BudgetConsumption:
         """Return the consumption row for (budget, period), row-locked FOR UPDATE.
 

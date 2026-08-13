@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import budget_service_dep, estimator_dep, new_request_id
@@ -27,21 +29,20 @@ async def estimate_cost(
     b = estimation.breakdown
     requested = new_request_id()
 
-    # Budget preflight (PRD # 27): evaluate the applicable budget and reserve,
-    # returning a real decision envelope. No budget configured -> ENABLED stub.
+    # Budget preflight (PRD # 27): evaluate the applicable budget without
+    # reserving (Phase 14/15: estimate is evaluate-only; generate reserves).
+    # No budget configured -> ENABLED stub.
     envelope = BudgetEnvelope()
-    budget = None
-    for scope_type, scope_id in (("TEAM", body.team_id), ("APPLICATION", body.application_id)):
-        if scope_id:
-            budget = await budget_service.find_for(scope_type, scope_id)
-            if budget is not None:
-                break
+    budget = await budget_service.find_applicable(
+        team_id=body.team_id, application_id=body.application_id
+    )
     if budget is not None:
-        decision = await budget_service.reserve(budget, b.total_cost, request_id=requested)
+        decision = await budget_service.evaluate(budget, b.total_cost)
+        # Clamp negative remainings (over-limit) to 0: Money must be non-negative.
         envelope = BudgetEnvelope(
             status=decision.status,
-            remaining_before_request=decision.remaining_before,
-            remaining_after_estimate=decision.remaining_after,
+            remaining_before_request=max(decision.remaining_before, Decimal("0")),
+            remaining_after_estimate=max(decision.remaining_after, Decimal("0")),
         )
 
     return EstimateResponse(

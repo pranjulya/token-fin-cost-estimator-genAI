@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.db.models import BudgetEvent
 from app.domain.budget import BLOCK
 from app.repositories.budget_repository import BudgetRepository
-from app.services.budget_service import BudgetService
+from app.services.budget_service import BudgetService, period_key_for
 
 SCOPE = {"scope_type": "TEAM", "scope_id": "platform-team"}
 
@@ -148,3 +148,38 @@ class TestBudgetService:
         events = rows.scalars().all()
         assert len(events) == 1
         assert events[0].event_type == "RESERVE"
+
+
+class TestBudgetEvaluate:
+    async def test_evaluate_does_not_mutate_or_event(self, db_session):
+        bid = await make_budget(db_session)
+        svc = BudgetService(BudgetRepository(db_session))
+        budget = await svc.find_for("TEAM", "platform-team")
+        await svc.reserve(budget, Decimal("10"), "req_seed")
+        await db_session.commit()
+
+        d = await svc.evaluate(budget, Decimal("20"))
+        assert d.status == "ALLOW"
+        await db_session.commit()
+
+        row = await BudgetRepository(db_session).get_consumption(
+            bid, period_key_for(budget.period_type)
+        )
+        assert row is not None
+        assert row.reserved_amount == Decimal("10")
+        events = (
+            (await db_session.execute(select(BudgetEvent).where(BudgetEvent.budget_id == bid)))
+            .scalars()
+            .all()
+        )
+        assert all(e.event_type in {"RESERVE", "DECISION"} for e in events)
+        assert sum(1 for e in events if e.event_type == "RESERVE") == 1
+
+    async def test_find_applicable_prefers_team(self, db_session):
+        await make_budget(db_session, scope_type="APPLICATION", scope_id="app-1")
+        await make_budget(db_session, scope_type="TEAM", scope_id="team-1")
+        svc = BudgetService(BudgetRepository(db_session))
+        b = await svc.find_applicable(team_id="team-1", application_id="app-1")
+        assert b is not None
+        assert b.scope_type == "TEAM"
+        assert b.scope_id == "team-1"

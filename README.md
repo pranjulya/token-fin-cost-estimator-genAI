@@ -7,6 +7,11 @@ pricing history.
 **This is the vertical slice.** Budget enforcement, Redis counters, alerts, and
 anomaly detection are the next phases (see `# Project 02` spec).
 
+> **Budget preflight:** `POST /v1/cost/estimate` is **evaluate-only** — it returns
+> a budget envelope (`ALLOW`/`WARN`/`CRITICAL`/`BLOCK`) but does **not** reserve
+> spend or write budget events. `POST /v1/generate` (Phase 14–15) is the only
+> path that reserves and settles.
+
 ## Stack
 
 Python 3.12 · FastAPI · SQLAlchemy 2.0 (async) · Alembic · PostgreSQL 14 ·
@@ -55,12 +60,14 @@ curl localhost:8000/v1/cost/by-team
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/cost/estimate` | tokenize + price + estimate cost |
+| POST | `/v1/cost/estimate` | tokenize + price + estimate cost (evaluate-only budget envelope) |
 | POST | `/v1/usage` | record actual usage (idempotent on `request_id`) |
 | GET | `/v1/usage` | list usage |
 | GET | `/v1/usage/summary` | totals |
 | GET | `/v1/cost/by-model` `/by-endpoint` `/by-team` | spend attribution |
 | POST/GET | `/v1/models/pricing` | pricing admin (versioned) |
+| POST/GET | `/v1/budgets` `/v1/budgets/{id}` | budget CRUD (TEAM/APPLICATION, MONTHLY/DAILY) |
+| GET/POST | `/v1/alerts` `/v1/alerts/{id}/acknowledge` | budget-threshold + cost-anomaly alerts |
 | GET | `/health` `/ready` | probes |
 
 Errors follow one envelope: `{"error":{"code","message","request_id"}}`.
@@ -81,7 +88,7 @@ Errors follow one envelope: `{"error":{"code","message","request_id"}}`.
 ## Tests
 
 ```bash
-uv run pytest                 # 49 tests: unit + integration (real test DB)
+uv run pytest                 # unit + integration (real test DB)
 ```
 
 `tests/conftest.py` points at the `token_cost_estimator_test` database
@@ -107,9 +114,13 @@ tests/           unit + integration
 
 ## Roadmap (next phases from the PRD)
 
-1. Budget domain + Redis atomic counters/reservations → enforcement
-   (`ALLOW/WARN/CRITICAL/BLOCK`).
-2. Alerts + rule-based anomaly detection.
-3. LLM provider adapter (service calls the LLM itself).
-4. Observability (metrics/tracing), authN/authZ, rate limits.
-5. Docker + CI.
+Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
+reservations, alert system) and Phase 14's LLM provider adapter (`LLMProvider`
+Protocol + OpenAI over httpx, gated behind `APP_GENERATE_ENABLED`).
+
+Next:
+
+1. `POST /v1/generate` — end-to-end generation flow (estimate → reserve → LLM →
+   record → settle), which wires up budget `commit`/`release`.
+2. Observability (metrics/tracing), authN/authZ, rate limits.
+3. Docker + CI.

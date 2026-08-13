@@ -133,3 +133,47 @@ class TestEstimateFlow:
         assert Decimal(env["remaining_after_estimate"]) == Decimal("100.00") - Decimal(
             data["estimated_total_cost"]
         )
+
+
+class TestEstimateEvaluateOnly:
+    async def test_estimate_does_not_reserve_or_alert(self, client, db_session):
+        from sqlalchemy import func, select
+
+        from app.db.models import Alert, BudgetConsumption, BudgetEvent
+
+        await seed_price(db_session)
+        await seed_budget(db_session)
+        resp = await client.post(
+            "/v1/cost/estimate",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input": "Hello world",
+                "expected_output_tokens": 100,
+                "team_id": "platform-team",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["budget"]["status"] == "ALLOW"
+        n_events = await db_session.scalar(select(func.count()).select_from(BudgetEvent))
+        assert n_events == 0
+        n_alerts = await db_session.scalar(select(func.count()).select_from(Alert))
+        assert n_alerts == 0
+        n_cons = await db_session.scalar(select(func.count()).select_from(BudgetConsumption))
+        assert n_cons == 0
+
+    async def test_estimate_block_is_still_200(self, client, db_session):
+        await seed_price(db_session)
+        await seed_budget(db_session, limit_amount=Decimal("0.000001"))
+        resp = await client.post(
+            "/v1/cost/estimate",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input": "Hello world",
+                "expected_output_tokens": 100000,
+                "team_id": "platform-team",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["budget"]["status"] == "BLOCK"
