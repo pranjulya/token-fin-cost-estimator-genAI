@@ -61,6 +61,13 @@ class TokenizationError(AppError):
     status_code = 422
 
 
+class ProviderError(AppError):
+    """External LLM provider call failed (PRD Phase 14)."""
+
+    code = ErrorCode.PROVIDER_ERROR
+    status_code = 502
+
+
 class ReconciliationError(AppError):
     code = ErrorCode.USAGE_RECONCILIATION_FAILED
     status_code = 500

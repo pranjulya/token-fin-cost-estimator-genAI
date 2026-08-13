@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # Stored variance_percent threshold; 400 => actual >= 5x estimate.
     alert_anomaly_variance_percent: Decimal = Decimal("400")
 
+    # LLM provider (Phase 14). Env prefix APP_ (e.g. APP_OPENAI_API_KEY).
+    # generate_enabled is read once at startup (get_settings is lru-cached) —
+    # flipping it requires a process restart.
+    generate_enabled: bool = False
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+    openai_timeout_seconds: float = 60
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
