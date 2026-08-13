@@ -183,3 +183,54 @@ class TestBudgetEvaluate:
         assert b is not None
         assert b.scope_type == "TEAM"
         assert b.scope_id == "team-1"
+
+
+class TestBudgetSettle:
+    async def test_settle_less_than_reserve(self, db_session):
+        await make_budget(db_session)
+        repo = BudgetRepository(db_session)
+        svc = BudgetService(repo)
+        budget = await svc.find_for("TEAM", "platform-team")
+        await svc.reserve(budget, Decimal("10"), "req_1")
+        await svc.settle(
+            budget, reserved_amount=Decimal("10"), actual_amount=Decimal("4"), request_id="req_1"
+        )
+        await db_session.commit()
+        row = await repo.get_consumption(budget.id, period_key_for(budget.period_type))
+        assert row.reserved_amount == Decimal("0")
+        assert row.committed_amount == Decimal("4")
+        types = [
+            e.event_type
+            for e in (
+                await db_session.execute(
+                    select(BudgetEvent).where(BudgetEvent.budget_id == budget.id)
+                )
+            )
+            .scalars()
+            .all()
+        ]
+        assert types.count("COMMIT") == 1
+        assert types.count("RELEASE") == 1
+
+    async def test_settle_overage_does_not_steal_other_reserve(self, db_session):
+        await make_budget(db_session, limit_amount="100.00")
+        repo = BudgetRepository(db_session)
+        svc = BudgetService(repo)
+        budget = await svc.find_for("TEAM", "platform-team")
+        await svc.reserve(budget, Decimal("4"), "g1")
+        await svc.reserve(budget, Decimal("4"), "g2")
+        await svc.settle(
+            budget, reserved_amount=Decimal("4"), actual_amount=Decimal("6"), request_id="g1"
+        )
+        await db_session.commit()
+        row = await repo.get_consumption(budget.id, period_key_for(budget.period_type))
+        # G2's E2=4 still reserved; G1 committed 6. used = 10.
+        assert row.reserved_amount == Decimal("4")
+        assert row.committed_amount == Decimal("6")
+        events = (
+            (await db_session.execute(select(BudgetEvent).where(BudgetEvent.request_id == "g1")))
+            .scalars()
+            .all()
+        )
+        assert [e.event_type for e in events if e.event_type != "RESERVE"] == ["COMMIT"]
+        assert events[-1].amount == Decimal("6")

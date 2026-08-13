@@ -148,6 +148,23 @@ class BudgetRepository:
         row.reserved_amount = max(row.reserved_amount - amount, Decimal("0"))
         await self._session.flush()
 
+    async def apply_overage(
+        self,
+        row: BudgetConsumption,
+        *,
+        reserved_consume: Decimal,
+        committed_add: Decimal,
+    ) -> None:
+        """Settle an actual that exceeded the estimate (PRD Phase 15 / K16).
+
+        Consume exactly this request's reserved amount (not the larger actual,
+        which would steal other in-flight reservations) and add the full actual
+        to committed. Only called from ``settle`` while the row is locked.
+        """
+        row.reserved_amount = max(row.reserved_amount - reserved_consume, Decimal("0"))
+        row.committed_amount += committed_add
+        await self._session.flush()
+
     # --- events --------------------------------------------------------------
 
     async def add_event(

@@ -11,6 +11,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from sqlalchemy.exc import IntegrityError
+
+from app.core.exceptions import GenerationAlreadyRecordedError
 from app.db.models import UsageRecord
 from app.providers.pricing.base import PricingProvider
 from app.repositories.usage_repository import UsageRepository
@@ -60,6 +63,103 @@ class UsageService:
         if existing is not None:
             return existing
 
+        return await self._build_and_insert(
+            request_id=request_id,
+            correlation_id=correlation_id,
+            provider=provider,
+            model=model,
+            application_id=application_id,
+            team_id=team_id,
+            user_id=user_id,
+            endpoint=endpoint,
+            environment=environment,
+            estimated_input_tokens=estimated_input_tokens,
+            estimated_output_tokens=estimated_output_tokens,
+            estimated_cost=estimated_cost,
+            actual_input_tokens=actual_input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            actual_output_tokens=actual_output_tokens,
+            status=status,
+            insert_new=False,
+        )
+
+    async def record_new(
+        self,
+        *,
+        request_id: str,
+        provider: str,
+        model: str,
+        actual_input_tokens: int,
+        actual_output_tokens: int,
+        cached_input_tokens: int = 0,
+        correlation_id: str | None = None,
+        application_id: str | None = None,
+        team_id: str | None = None,
+        user_id: str | None = None,
+        endpoint: str | None = None,
+        environment: str | None = None,
+        estimated_input_tokens: int = 0,
+        estimated_output_tokens: int = 0,
+        estimated_cost: Decimal | None = None,
+        status: str = "SUCCESS",
+    ) -> UsageRecord:
+        """Like ``record`` but for the generate path (PRD Phase 15 / K17).
+
+        Same kwargs as ``record``. Differences:
+        1. An existing row raises ``GenerationAlreadyRecordedError`` instead of
+           silently returning it (generate must never settle twice).
+        2. The insert runs in a savepoint; a concurrent unique-``request_id``
+           ``IntegrityError`` is mapped to ``GenerationAlreadyRecordedError``
+           so the outer session stays usable for release(E) + commit.
+        """
+        existing = await self._repository.get_by_request_id(request_id)
+        if existing is not None:
+            raise GenerationAlreadyRecordedError(request_id)
+
+        try:
+            return await self._build_and_insert(
+                request_id=request_id,
+                correlation_id=correlation_id,
+                provider=provider,
+                model=model,
+                application_id=application_id,
+                team_id=team_id,
+                user_id=user_id,
+                endpoint=endpoint,
+                environment=environment,
+                estimated_input_tokens=estimated_input_tokens,
+                estimated_output_tokens=estimated_output_tokens,
+                estimated_cost=estimated_cost,
+                actual_input_tokens=actual_input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                actual_output_tokens=actual_output_tokens,
+                status=status,
+                insert_new=True,
+            )
+        except IntegrityError as exc:
+            raise GenerationAlreadyRecordedError(request_id) from exc
+
+    async def _build_and_insert(
+        self,
+        *,
+        request_id: str,
+        provider: str,
+        model: str,
+        actual_input_tokens: int,
+        cached_input_tokens: int,
+        actual_output_tokens: int,
+        correlation_id: str | None,
+        application_id: str | None,
+        team_id: str | None,
+        user_id: str | None,
+        endpoint: str | None,
+        environment: str | None,
+        estimated_input_tokens: int,
+        estimated_output_tokens: int,
+        estimated_cost: Decimal | None,
+        status: str,
+        insert_new: bool,
+    ) -> UsageRecord:
         model_price = await self._pricing.get_pricing(provider, model)
         CostCalculator.validate_price(model_price)
 
@@ -96,7 +196,10 @@ class UsageService:
             status=status,
             completed_at=_utcnow(),
         )
-        record = await self._repository.add(record)
+        if insert_new:
+            record = await self._repository.add_new(record)
+        else:
+            record = await self._repository.add(record)
 
         # Fire a cost anomaly alert on newly-created SUCCESS rows (Phase 13).
         # Idempotent retries return early above, so alerts never double-fire.

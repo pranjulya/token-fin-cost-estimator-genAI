@@ -18,7 +18,9 @@ from app.schemas.common import ErrorDetail, GenericError
 VALIDATION_STATUS = 422
 
 
-def _request_id(request: Request) -> str:
+def _request_id(request: Request, exc: AppError | None = None) -> str:
+    if exc is not None and getattr(exc, "request_id", None):
+        return exc.request_id
     return request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:16]}"
 
 
@@ -30,7 +32,7 @@ def _error_response(code: str, message: str, request_id: str, status: int) -> JS
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-        return _error_response(exc.code, exc.message, _request_id(request), exc.status_code)
+        return _error_response(exc.code, exc.message, _request_id(request, exc), exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

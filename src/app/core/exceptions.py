@@ -19,6 +19,9 @@ class ErrorCode(str):
     DATABASE_ERROR = "DATABASE_ERROR"
     REDIS_UNAVAILABLE = "REDIS_UNAVAILABLE"
     PROVIDER_ERROR = "PROVIDER_ERROR"
+    BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
+    GENERATION_DISABLED = "GENERATION_DISABLED"
+    GENERATION_ALREADY_RECORDED = "GENERATION_ALREADY_RECORDED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -66,6 +69,34 @@ class ProviderError(AppError):
 
     code = ErrorCode.PROVIDER_ERROR
     status_code = 502
+
+
+class BudgetExceededError(AppError):
+    """STRICT budget BLOCK on the generate path (PRD Phase 15)."""
+
+    code = ErrorCode.BUDGET_EXCEEDED
+    status_code = 403
+
+
+class GenerationDisabledError(AppError):
+    """Generate endpoint disabled via APP_GENERATE_ENABLED."""
+
+    code = ErrorCode.GENERATION_DISABLED
+    status_code = 503
+
+
+class GenerationAlreadyRecordedError(AppError):
+    """request_id already exists in usage_records (idempotency gate)."""
+
+    code = ErrorCode.GENERATION_ALREADY_RECORDED
+    status_code = 409
+
+    def __init__(self, request_id: str):
+        super().__init__(
+            f"Generation already recorded for request_id='{request_id}'. "
+            "Completion text is not stored; list GET /v1/usage and filter by request_id.",
+            request_id=request_id,
+        )
 
 
 class ReconciliationError(AppError):

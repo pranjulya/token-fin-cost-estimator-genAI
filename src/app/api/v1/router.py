@@ -8,6 +8,7 @@ from app.api.v1 import (
     routes_alerts,
     routes_budget,
     routes_cost,
+    routes_generate,
     routes_health,
     routes_pricing,
     routes_usage,
@@ -19,6 +20,7 @@ api_router.include_router(routes_usage.router)
 api_router.include_router(routes_pricing.router)
 api_router.include_router(routes_budget.router)
 api_router.include_router(routes_alerts.router)
+api_router.include_router(routes_generate.router)
 
 # Health endpoints are version-agnostic; mount at root too.
 health_router = APIRouter()

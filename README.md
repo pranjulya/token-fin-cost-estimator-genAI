@@ -61,6 +61,7 @@ curl localhost:8000/v1/cost/by-team
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/v1/cost/estimate` | tokenize + price + estimate cost (evaluate-only budget envelope) |
+| POST | `/v1/generate` | end-to-end: estimate → budget reserve → LLM call → record → settle (disabled unless `APP_GENERATE_ENABLED=true`) |
 | POST | `/v1/usage` | record actual usage (idempotent on `request_id`) |
 | GET | `/v1/usage` | list usage |
 | GET | `/v1/usage/summary` | totals |
@@ -71,6 +72,29 @@ curl localhost:8000/v1/cost/by-team
 | GET | `/health` `/ready` | probes |
 
 Errors follow one envelope: `{"error":{"code","message","request_id"}}`.
+
+## Generating completions
+
+`POST /v1/generate` is the only path that calls an LLM **and** the only path
+that reserves **and** settles a budget. It is **off by default** — set these to
+enable it:
+
+```text
+APP_GENERATE_ENABLED=true
+APP_OPENAI_API_KEY=sk-...
+APP_OPENAI_BASE_URL=          # optional, defaults to api.openai.com/v1
+APP_OPENAI_TIMEOUT_SECONDS=60 # optional
+```
+
+- STRICT budget BLOCK → `403 BUDGET_EXCEEDED`, the LLM is never called.
+- Provider failure → reservation is released and no SUCCESS usage row is written.
+- Repeating a `request_id` → `409 GENERATION_ALREADY_RECORDED`; completion text
+  is **not** stored — list `GET /v1/usage` and filter by `request_id` for money.
+- After a 5xx, retry with a **new** `request_id`.
+- Prompts and completions are never logged or persisted.
+
+`POST /v1/usage` remains for clients that call an LLM themselves (ledger only —
+it does not reserve or settle budgets).
 
 ## Design highlights
 
@@ -115,12 +139,11 @@ tests/           unit + integration
 ## Roadmap (next phases from the PRD)
 
 Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
-reservations, alert system) and Phase 14's LLM provider adapter (`LLMProvider`
-Protocol + OpenAI over httpx, gated behind `APP_GENERATE_ENABLED`).
+reservations, alert system) and Phases 14–15 (`LLMProvider` Protocol + OpenAI
+over httpx, and `POST /v1/generate` end-to-end reserve → call → settle).
 
 Next:
 
-1. `POST /v1/generate` — end-to-end generation flow (estimate → reserve → LLM →
-   record → settle), which wires up budget `commit`/`release`.
-2. Observability (metrics/tracing), authN/authZ, rate limits.
-3. Docker + CI.
+1. Observability (metrics/tracing, Phase 16).
+2. Security hardening: authN/authZ, rate limits, input size limits (Phase 17).
+3. Docker + CI (Phases 19–20).

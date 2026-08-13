@@ -152,3 +152,58 @@ class BudgetService:
             amount=amount,
             request_id=request_id,
         )
+
+    async def settle(
+        self,
+        budget: Budget,
+        *,
+        reserved_amount: Decimal,
+        actual_amount: Decimal,
+        request_id: str | None,
+    ) -> None:
+        """Settle a finished request: consume its E from reserved, add A to committed.
+
+        Always consumes this request's reserved amount ``E`` — never the actual
+        ``A`` when ``A > E`` (that would steal other in-flight reservations).
+        Does not re-run ``decide()`` and fires no alerts (Phase 13 K3).
+        """
+        period_key = period_key_for(budget.period_type)
+        row = await self._repository.lock_consumption(budget.id, period_key)
+        if actual_amount < reserved_amount:
+            await self._repository.commit_amount(row, actual_amount)
+            await self._repository.add_event(
+                budget_id=budget.id,
+                event_type="COMMIT",
+                period_key=period_key,
+                amount=actual_amount,
+                request_id=request_id,
+            )
+            leftover = reserved_amount - actual_amount
+            await self._repository.release_amount(row, leftover)
+            await self._repository.add_event(
+                budget_id=budget.id,
+                event_type="RELEASE",
+                period_key=period_key,
+                amount=leftover,
+                request_id=request_id,
+            )
+        elif actual_amount == reserved_amount:
+            await self._repository.commit_amount(row, reserved_amount)
+            await self._repository.add_event(
+                budget_id=budget.id,
+                event_type="COMMIT",
+                period_key=period_key,
+                amount=reserved_amount,
+                request_id=request_id,
+            )
+        else:  # A > E: actual exceeded estimate
+            await self._repository.apply_overage(
+                row, reserved_consume=reserved_amount, committed_add=actual_amount
+            )
+            await self._repository.add_event(
+                budget_id=budget.id,
+                event_type="COMMIT",
+                period_key=period_key,
+                amount=actual_amount,
+                request_id=request_id,
+            )

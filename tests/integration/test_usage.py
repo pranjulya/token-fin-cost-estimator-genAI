@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
+from app.core.exceptions import GenerationAlreadyRecordedError
+from app.providers.pricing.database_pricing import DatabasePricingProvider
 from app.repositories.pricing_repository import PricingRepository
+from app.repositories.usage_repository import UsageRepository
+from app.services.usage_service import UsageService
 
 PAYLOAD = {
     "request_id": "req_abc123",
@@ -92,3 +98,29 @@ class TestUsageLedger:
         by_model = (await client.get("/v1/cost/by-model")).json()
         assert len(by_model) == 1
         assert by_model[0]["key"] == "gpt-4o"
+
+
+class TestRecordNew:
+    async def test_record_new_raises_on_existing(self, db_session):
+        await seed_price(db_session)
+        svc = UsageService(
+            pricing=DatabasePricingProvider(PricingRepository(db_session)),
+            repository=UsageRepository(db_session),
+            alerts=None,
+        )
+        await svc.record(
+            request_id="req_dup",
+            provider="openai",
+            model="gpt-4o",
+            actual_input_tokens=10,
+            actual_output_tokens=10,
+        )
+        await db_session.commit()
+        with pytest.raises(GenerationAlreadyRecordedError):
+            await svc.record_new(
+                request_id="req_dup",
+                provider="openai",
+                model="gpt-4o",
+                actual_input_tokens=10,
+                actual_output_tokens=10,
+            )

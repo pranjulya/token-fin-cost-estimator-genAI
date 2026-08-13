@@ -24,6 +24,18 @@ class UsageRepository:
         await self._session.flush()
         return record
 
+    async def add_new(self, record: UsageRecord) -> UsageRecord:
+        """Insert a usage row inside a savepoint; re-raise IntegrityError.
+
+        The generate path maps a unique ``request_id`` violation to a 409. The
+        nested transaction rolls back only the failed INSERT so the outer
+        session stays usable (e.g. for release(E) + commit after the 409).
+        """
+        async with self._session.begin_nested():
+            self._session.add(record)
+            await self._session.flush()
+            return record
+
     async def historical_avg_cost(
         self,
         *,
