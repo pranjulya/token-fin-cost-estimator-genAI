@@ -178,11 +178,12 @@ tests/           unit + integration
 Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
 reservations, alert system), Phases 14–15 (`LLMProvider` + `POST /v1/generate`
 end-to-end reserve → call → settle), Phase 16 (observability: structured
-request logs, correlation IDs, Prometheus `/metrics`, span events), and
-Phase 17 (security: API-key auth + admin scope, rate limiting, input limits,
-log redaction, audit events).
+request logs, correlation IDs, Prometheus `/metrics`, span events), Phase 17
+(security: API-key auth + admin scope, rate limiting, input limits, log
+redaction, audit events), and Phase 18 (comprehensive testing: concurrency,
+failure-mode, contract, load smoke).
 
 Next:
 
-1. Comprehensive testing: concurrency, failure, load (Phase 18).
-2. Docker + CI (Phases 19–20).
+1. Dockerization: app container, Postgres, docker-compose, health checks (Phase 19).
+2. CI pipeline: checkout → install → lint → type check → tests → build (Phase 20).

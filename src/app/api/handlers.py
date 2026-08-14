@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -49,6 +49,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             ErrorCode.VALIDATION_ERROR, msg, _request_id(request), VALIDATION_STATUS
         )
+
+    @app.exception_handler(HTTPException)
+    async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:
+        # Convert bare FastAPI HTTPExceptions (e.g. route-level 404s) into the
+        # PRD error envelope (Phase 18 contract).
+        code = {401: ErrorCode.UNAUTHORIZED, 403: ErrorCode.FORBIDDEN}.get(
+            exc.status_code, ErrorCode.VALIDATION_ERROR
+        )
+        return _error_response(code, str(exc.detail), _request_id(request), exc.status_code)
 
     @app.exception_handler(SQLAlchemyError)
     async def _db_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
