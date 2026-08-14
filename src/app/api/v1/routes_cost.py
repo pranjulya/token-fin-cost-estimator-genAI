@@ -7,6 +7,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import budget_service_dep, estimator_dep, new_request_id
+from app.api.ratelimit import rate_limit_dep
 from app.schemas.cost import BudgetEnvelope, EstimateRequest, EstimateResponse
 from app.services.budget_service import BudgetService
 from app.services.cost_estimator import CostEstimator
@@ -14,7 +15,11 @@ from app.services.cost_estimator import CostEstimator
 router = APIRouter(prefix="/cost", tags=["cost"])
 
 
-@router.post("/estimate", response_model=EstimateResponse)
+@router.post(
+    "/estimate",
+    response_model=EstimateResponse,
+    dependencies=[Depends(rate_limit_dep("default"))],
+)
 async def estimate_cost(
     body: EstimateRequest,
     estimator: CostEstimator = Depends(estimator_dep),

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from app.core.config import get_settings
 from app.schemas.common import APIModel, Money, SignedMoney
 
 
@@ -29,6 +30,21 @@ class UsageCreate(BaseModel):
     actual_output_tokens: int = Field(..., ge=0)
 
     status: str = Field(default="SUCCESS", max_length=32)
+
+    @model_validator(mode="after")
+    def _token_limits(self) -> "UsageCreate":
+        """Block absurd token counts (Phase 17 input limits)."""
+        cap = get_settings().max_expected_output_tokens
+        for field in (
+            "estimated_input_tokens",
+            "estimated_output_tokens",
+            "actual_input_tokens",
+            "cached_input_tokens",
+            "actual_output_tokens",
+        ):
+            if getattr(self, field) > cap:
+                raise ValueError(f"{field} exceeds max_expected_output_tokens")
+        return self
 
 
 class UsageOut(APIModel):

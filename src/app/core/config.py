@@ -54,9 +54,30 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     service_name: str = "token-cost-estimator"
 
+    # Security (Phase 17). Comma-separated API keys; admin keys are a superset
+    # of user keys (an admin key can call any route).
+    api_keys: str = ""
+    admin_api_keys: str = ""
+    rate_limit_per_minute: int = 60
+    rate_limit_generate_per_minute: int = 10
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def user_api_key_set(self) -> set[str]:
+        return {k.strip() for k in self.api_keys.split(",") if k.strip()}
+
+    @property
+    def admin_api_key_set(self) -> set[str]:
+        return {k.strip() for k in self.admin_api_keys.split(",") if k.strip()}
+
+    def is_valid_key(self, key: str) -> bool:
+        return key in self.user_api_key_set or key in self.admin_api_key_set
+
+    def is_admin_key(self, key: str) -> bool:
+        return key in self.admin_api_key_set
 
 
 @lru_cache

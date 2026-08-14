@@ -5,13 +5,18 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.dependencies import generation_service_dep
+from app.api.ratelimit import rate_limit_dep
 from app.schemas.generate import GenerateRequest, GenerateResponse
 from app.services.generation_service import GenerationService
 
 router = APIRouter(tags=["generate"])
 
 
-@router.post("/generate", response_model=GenerateResponse)
+@router.post(
+    "/generate",
+    response_model=GenerateResponse,
+    dependencies=[Depends(rate_limit_dep("generate"))],
+)
 async def generate(
     body: GenerateRequest,
     service: GenerationService = Depends(generation_service_dep),

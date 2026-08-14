@@ -22,6 +22,9 @@ class ErrorCode(str):
     BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
     GENERATION_DISABLED = "GENERATION_DISABLED"
     GENERATION_ALREADY_RECORDED = "GENERATION_ALREADY_RECORDED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    FORBIDDEN = "FORBIDDEN"
+    RATE_LIMITED = "RATE_LIMITED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
@@ -97,6 +100,27 @@ class GenerationAlreadyRecordedError(AppError):
             "Completion text is not stored; list GET /v1/usage and filter by request_id.",
             request_id=request_id,
         )
+
+
+class AuthenticationError(AppError):
+    """Missing or invalid API key (Phase 17)."""
+
+    code = ErrorCode.UNAUTHORIZED
+    status_code = 401
+
+
+class AuthorizationError(AppError):
+    """Valid key but insufficient scope (Phase 17)."""
+
+    code = ErrorCode.FORBIDDEN
+    status_code = 403
+
+
+class RateLimitError(AppError):
+    """Per-key rate limit exceeded (Phase 17)."""
+
+    code = ErrorCode.RATE_LIMITED
+    status_code = 429
 
 
 class ReconciliationError(AppError):

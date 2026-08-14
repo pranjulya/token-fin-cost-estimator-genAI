@@ -43,8 +43,8 @@ async def make_budget(db, **overrides) -> int:
 
 
 class TestBudgetAPI:
-    async def test_create_and_read(self, client, db_session):
-        resp = await client.post(
+    async def test_create_and_read(self, admin_client, db_session):
+        resp = await admin_client.post(
             "/v1/budgets",
             json=SCOPE
             | {
@@ -58,12 +58,12 @@ class TestBudgetAPI:
         assert Decimal(data["limit_amount"]) == Decimal("100.00")
         assert data["enforcement_mode"] == "STRICT"
 
-        got = await client.get(f"/v1/budgets/{data['id']}")
+        got = await admin_client.get(f"/v1/budgets/{data['id']}")
         assert got.status_code == 200
         assert got.json()["period_type"] == "MONTHLY"
 
-    async def test_invalid_scope_type_rejected(self, client, db_session):
-        resp = await client.post(
+    async def test_invalid_scope_type_rejected(self, admin_client, db_session):
+        resp = await admin_client.post(
             "/v1/budgets",
             json=SCOPE
             | {
@@ -74,8 +74,8 @@ class TestBudgetAPI:
         )
         assert resp.status_code == 422
 
-    async def test_warning_exceeds_critical_rejected(self, client, db_session):
-        resp = await client.post(
+    async def test_warning_exceeds_critical_rejected(self, admin_client, db_session):
+        resp = await admin_client.post(
             "/v1/budgets",
             json=SCOPE
             | {
@@ -87,8 +87,8 @@ class TestBudgetAPI:
         )
         assert resp.status_code == 422
 
-    async def test_unknown_id_404(self, client, db_session):
-        assert (await client.get("/v1/budgets/99999")).status_code == 404
+    async def test_unknown_id_404(self, admin_client, db_session):
+        assert (await admin_client.get("/v1/budgets/99999")).status_code == 404
 
 
 class TestBudgetService:

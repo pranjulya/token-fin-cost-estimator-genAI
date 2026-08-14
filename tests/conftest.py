@@ -12,6 +12,12 @@ import os
 os.environ["APP_DATABASE_URL"] = (
     "postgresql+psycopg://pranjulyabajpai@localhost:5432/token_cost_estimator_test"
 )
+# Phase 17: default API keys for the test suite. Existing integration tests
+# authenticate as the user key; tests needing admin use the admin key explicitly.
+os.environ["APP_API_KEYS"] = "test-user-key"
+os.environ["APP_ADMIN_API_KEYS"] = "test-admin-key"
+os.environ["APP_RATE_LIMIT_PER_MINUTE"] = "1000"
+os.environ["APP_RATE_LIMIT_GENERATE_PER_MINUTE"] = "1000"
 
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -52,7 +58,19 @@ async def _clear_log_contextvars():
 @pytest_asyncio.fixture
 async def client():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver", headers={"X-API-Key": "test-user-key"}
+    ) as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def admin_client():
+    """Client authenticated with the admin API key (Phase 17)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver", headers={"X-API-Key": "test-admin-key"}
+    ) as c:
         yield c
 
 

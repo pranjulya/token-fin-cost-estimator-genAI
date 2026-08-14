@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.auth import require_admin
 from app.api.dependencies import alert_service_dep
+from app.core.audit import audit, key_actor
 from app.core.exceptions import InvalidRequestError
 from app.schemas.alerts import ALERT_TYPES, SEVERITIES, AlertOut
 from app.services.alert_service import AlertService
@@ -53,7 +55,16 @@ async def get_alert(alert_id: int, service: AlertService = Depends(alert_service
 
 @router.post("/{alert_id}/acknowledge", response_model=AlertOut)
 async def acknowledge_alert(
-    alert_id: int, service: AlertService = Depends(alert_service_dep)
+    alert_id: int,
+    service: AlertService = Depends(alert_service_dep),
+    key: str = Depends(require_admin),
 ) -> AlertOut:
     alert = await _get_or_404(service, alert_id)
-    return AlertOut.model_validate(await service.acknowledge(alert))
+    row = await service.acknowledge(alert)
+    audit(
+        "audit_alert_acknowledged",
+        actor=key_actor(key),
+        alert_id=row.id,
+        alert_type=row.alert_type,
+    )
+    return AlertOut.model_validate(row)

@@ -2,7 +2,8 @@
 
 Prints a short human-readable text format during development and switches to
 JSON in production. Sensitive prompt content is never logged — callers must
-not pass raw prompt text into log bindings.
+not pass raw prompt text into log bindings. Secret-shaped keys are redacted by
+a processor (Phase 17).
 """
 
 from __future__ import annotations
@@ -15,11 +16,24 @@ import structlog
 
 from app.core.config import get_settings
 
+# Keys whose values are redacted from every log event (Phase 17).
+_SECRET_KEY_MARKERS = ("api_key", "apikey", "token", "secret", "password", "authorization")
+
+
+def redact_processor(_logger, _method, event_dict):
+    """Replace values of secret-shaped keys with [REDACTED]."""
+    for key in list(event_dict):
+        lowered = key.lower()
+        if any(marker in lowered for marker in _SECRET_KEY_MARKERS):
+            event_dict[key] = "[REDACTED]"
+    return event_dict
+
 
 def _shared_processors() -> list:
     timestamper = structlog.processors.TimeStamper(fmt="iso")
     return [
         structlog.contextvars.merge_contextvars,
+        redact_processor,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         timestamper,

@@ -115,6 +115,24 @@ it does not reserve or settle budgets).
   `span_duration_seconds`) around Tokenization, Pricing Lookup, Cost
   Estimation, Budget Evaluation, LLM Provider, and Usage Reconciliation.
 
+## Security (Phase 17)
+
+- **API-key auth** — every `/v1` route requires a valid key via `X-API-Key` or
+  `Authorization: Bearer <key>`. Configure `APP_API_KEYS` (comma-separated).
+  `/health`, `/ready`, `/metrics` stay open for ops probes.
+- **Admin scope** — `APP_ADMIN_API_KEYS` (a superset of user keys) grants
+  budget management, alerts, and pricing writes. A user key calling an admin
+  route → `403 FORBIDDEN`; missing/invalid key → `401 UNAUTHORIZED`.
+- **Rate limiting** — in-memory per-key token buckets: `APP_RATE_LIMIT_PER_MINUTE`
+  on usage/estimate, `APP_RATE_LIMIT_GENERATE_PER_MINUTE` (default 10) on
+  `/v1/generate`. Exceeded → `429 RATE_LIMITED`.
+- **Input limits** — `max_prompt_chars` / `max_expected_output_tokens` enforced
+  on estimate + generate + usage token counts.
+- **Log redaction** — a structlog processor redacts secret-shaped keys
+  (`api_key`, `token`, `authorization`, …) from every log event.
+- **Audit events** — `audit_*` structured logs on pricing/budget/alert
+  mutations (actor is a key prefix, never the raw key).
+
 ## Design highlights
 
 - **Decimal-only money** — `src/app/utils/money.py`; per-million storage →
@@ -159,12 +177,12 @@ tests/           unit + integration
 
 Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
 reservations, alert system), Phases 14–15 (`LLMProvider` + `POST /v1/generate`
-end-to-end reserve → call → settle), and Phase 16 (observability: structured
-request logs, correlation IDs, Prometheus `/metrics`, span events).
+end-to-end reserve → call → settle), Phase 16 (observability: structured
+request logs, correlation IDs, Prometheus `/metrics`, span events), and
+Phase 17 (security: API-key auth + admin scope, rate limiting, input limits,
+log redaction, audit events).
 
 Next:
 
-1. Security hardening: authN/authZ, rate limits, input size limits, secret
-   handling, log redaction (Phase 17).
-2. Comprehensive testing: concurrency, failure, load (Phase 18).
-3. Docker + CI (Phases 19–20).
+1. Comprehensive testing: concurrency, failure, load (Phase 18).
+2. Docker + CI (Phases 19–20).

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import aggregation_dep, usage_repo_dep, usage_service_dep
+from app.api.ratelimit import rate_limit_dep
 from app.repositories.usage_repository import UsageRepository
 from app.schemas.usage import CostByDimension, UsageCreate, UsageOut, UsageSummary
 from app.services.aggregation_service import AggregationService
@@ -13,7 +14,12 @@ from app.services.usage_service import UsageService
 router = APIRouter(tags=["usage"])
 
 
-@router.post("/usage", response_model=UsageOut, status_code=201)
+@router.post(
+    "/usage",
+    response_model=UsageOut,
+    status_code=201,
+    dependencies=[Depends(rate_limit_dep("default"))],
+)
 async def create_usage(
     body: UsageCreate, service: UsageService = Depends(usage_service_dep)
 ) -> UsageOut:
