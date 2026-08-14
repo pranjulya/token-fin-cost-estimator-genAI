@@ -4,13 +4,25 @@ Estimate LLM cost before generation, track actual usage after, attribute spend,
 and reconcile estimate vs actual — with Decimal-safe money math and frozen
 pricing history.
 
-**This is the vertical slice.** Budget enforcement, Redis counters, alerts, and
-anomaly detection are the next phases (see `# Project 02` spec).
-
 > **Budget preflight:** `POST /v1/cost/estimate` is **evaluate-only** — it returns
 > a budget envelope (`ALLOW`/`WARN`/`CRITICAL`/`BLOCK`) but does **not** reserve
 > spend or write budget events. `POST /v1/generate` (Phase 14–15) is the only
 > path that reserves and settles.
+
+## Docker (Phase 19)
+
+```bash
+docker compose up --build
+```
+
+- `app` runs migrations + seeds pricing (idempotent) on boot, then uvicorn on
+  `:8000`.
+- `db` is PostgreSQL 14 with a health check; the app waits for it.
+- `/health`, `/ready`, `/metrics` are open; `/v1/*` requires `X-API-Key`.
+  Compose defaults: user key `dev-user-key`, admin key `dev-admin-key`.
+- **Redis is intentionally omitted** — the PRD lists it, but this service uses
+  Postgres `FOR UPDATE` for budget concurrency instead of Redis counters, so a
+  Redis container would be dead infrastructure.
 
 ## Stack
 

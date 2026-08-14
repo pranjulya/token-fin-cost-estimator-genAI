@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: token_cost_estimator
+      POSTGRES_USER: token_cost_estimator
+      POSTGRES_PASSWORD: token_cost_estimator_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U token_cost_estimator"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    environment:
+      APP_DATABASE_URL: postgresql+psycopg://token_cost_estimator:token_cost_estimator_dev@db:5432/token_cost_estimator
+      APP_ENVIRONMENT: development
+      # Money-spending endpoint is off by default. Set APP_OPENAI_API_KEY and
+      # flip APP_GENERATE_ENABLED=true to enable /v1/generate.
+      APP_GENERATE_ENABLED: "false"
+      APP_OPENAI_API_KEY: ""
+      APP_API_KEYS: "dev-user-key"
+      APP_ADMIN_API_KEYS: "dev-admin-key"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

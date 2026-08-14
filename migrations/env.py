@@ -14,6 +14,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 # access to the values within the .ini file in use.
 config = context.config
 
+# Allow the container/deployment to override the DB URL with APP_DATABASE_URL
+# (the app's Settings env var) instead of the hard-coded alembic.ini value.
+if os.environ.get("APP_DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["APP_DATABASE_URL"])
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:

@@ -1,5 +1,9 @@
 """Seed realistic OpenAI pricing into the pricing registry.
 
+Idempotent: a run is a no-op when pricing for today already exists for a
+(provider, model) pair. This makes it safe to run in the container entrypoint
+on every boot.
+
 Usage:
     uv run python scripts/seed_pricing.py            (dev DB)
     APP_DATABASE_URL=... uv run python scripts/seed_pricing.py
@@ -32,10 +36,20 @@ PRICING: dict[str, dict[str, tuple[str, str | None, str]]] = {
 
 
 def main() -> None:
+    today = date.today()
+    inserted = 0
     with SyncSessionLocal() as session:
         for provider, models in PRICING.items():
             for model, (inp, cached, out) in models.items():
-                # bump version if a row already exists for this model
+                existing = session.scalar(
+                    select(ModelPricing).where(
+                        ModelPricing.provider == provider,
+                        ModelPricing.model == model,
+                        ModelPricing.effective_from == today,
+                    )
+                )
+                if existing is not None:
+                    continue
                 latest_version = (
                     session.execute(
                         select(func.max(ModelPricing.version)).where(
@@ -52,13 +66,15 @@ def main() -> None:
                         input_price_per_million=inp,
                         cached_input_price_per_million=cached,
                         output_price_per_million=out,
-                        effective_from=date.today(),
+                        effective_from=today,
                         effective_to=None,
                         version=latest_version + 1,
                     )
                 )
+                inserted += 1
         session.commit()
-    print(f"Seeded {sum(len(m) for m in PRICING.values())} pricing rows.")
+    total = sum(len(models) for models in PRICING.values())
+    print(f"Seeded {inserted} new pricing rows ({total - inserted} already present).")
 
 
 if __name__ == "__main__":
