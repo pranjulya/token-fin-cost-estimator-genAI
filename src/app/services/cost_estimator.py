@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.core.metrics import span
 from app.domain.cost import CostBreakdown
 from app.domain.pricing import ModelPrice
 from app.providers.pricing.base import PricingProvider
@@ -42,14 +43,17 @@ class CostEstimator:
         input_text: str,
         expected_output_tokens: int,
     ) -> Estimation:
-        input_tokens = self._token_counter.count(model, input_text)
-        model_price = await self._pricing.get_pricing(provider, model)
+        with span("tokenization"):
+            input_tokens = self._token_counter.count(model, input_text)
+        with span("pricing_lookup"):
+            model_price = await self._pricing.get_pricing(provider, model)
         CostCalculator.validate_price(model_price)
-        breakdown = CostCalculator.calculate(
-            input_tokens=input_tokens,
-            output_tokens=expected_output_tokens,
-            pricing=model_price,
-        )
+        with span("cost_estimation"):
+            breakdown = CostCalculator.calculate(
+                input_tokens=input_tokens,
+                output_tokens=expected_output_tokens,
+                pricing=model_price,
+            )
         return Estimation(
             input_tokens=input_tokens,
             output_tokens=expected_output_tokens,

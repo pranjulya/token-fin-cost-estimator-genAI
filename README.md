@@ -69,6 +69,7 @@ curl localhost:8000/v1/cost/by-team
 | POST/GET | `/v1/models/pricing` | pricing admin (versioned) |
 | POST/GET | `/v1/budgets` `/v1/budgets/{id}` | budget CRUD (TEAM/APPLICATION, MONTHLY/DAILY) |
 | GET/POST | `/v1/alerts` `/v1/alerts/{id}/acknowledge` | budget-threshold + cost-anomaly alerts |
+| GET | `/metrics` | Prometheus metrics (Phase 16) |
 | GET | `/health` `/ready` | probes |
 
 Errors follow one envelope: `{"error":{"code","message","request_id"}}`.
@@ -95,6 +96,24 @@ APP_OPENAI_TIMEOUT_SECONDS=60 # optional
 
 `POST /v1/usage` remains for clients that call an LLM themselves (ledger only —
 it does not reserve or settle budgets).
+
+## Observability (Phase 16)
+
+- **Structured logs** — structlog (JSON in production). Every request carries
+  `request_id`, `correlation_id`, `endpoint`, `method`, `status`, `latency_ms`
+  via an access-log middleware; a `request_completed` event is emitted per
+  request. Prompts/completions are never logged.
+- **Correlation IDs** — send `X-Request-ID` (or `X-Correlation-ID`) and it is
+  echoed on the response and propagated through logs/errors; otherwise a
+  `req_...` id is generated.
+- **Metrics** — `GET /metrics` (Prometheus text format) with the PRD metric
+  set: `llm_requests_total`, `llm_input_tokens_total`, `llm_output_tokens_total`,
+  `llm_cost_total`, `llm_estimated_cost_total`, `llm_budget_rejections_total`,
+  `llm_cost_anomaly_total`, `llm_request_duration_seconds`. Disable with
+  `APP_METRICS_ENABLED=false`.
+- **Tracing** — lightweight span events (`span_completed` with
+  `span_duration_seconds`) around Tokenization, Pricing Lookup, Cost
+  Estimation, Budget Evaluation, LLM Provider, and Usage Reconciliation.
 
 ## Design highlights
 
@@ -139,11 +158,13 @@ tests/           unit + integration
 ## Roadmap (next phases from the PRD)
 
 Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
-reservations, alert system) and Phases 14–15 (`LLMProvider` Protocol + OpenAI
-over httpx, and `POST /v1/generate` end-to-end reserve → call → settle).
+reservations, alert system), Phases 14–15 (`LLMProvider` + `POST /v1/generate`
+end-to-end reserve → call → settle), and Phase 16 (observability: structured
+request logs, correlation IDs, Prometheus `/metrics`, span events).
 
 Next:
 
-1. Observability (metrics/tracing, Phase 16).
-2. Security hardening: authN/authZ, rate limits, input size limits (Phase 17).
+1. Security hardening: authN/authZ, rate limits, input size limits, secret
+   handling, log redaction (Phase 17).
+2. Comprehensive testing: concurrency, failure, load (Phase 18).
 3. Docker + CI (Phases 19–20).

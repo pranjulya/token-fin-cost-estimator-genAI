@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None
     openai_timeout_seconds: float = 60
 
+    # Observability (Phase 16).
+    metrics_enabled: bool = True
+    service_name: str = "token-cost-estimator"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

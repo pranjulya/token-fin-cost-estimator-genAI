@@ -39,6 +39,16 @@ async def _clean_tables(_create_tables):
     yield
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _clear_log_contextvars():
+    """Clear structlog contextvars before/after each test (Phase 16 middleware)."""
+    import structlog
+
+    structlog.contextvars.clear_contextvars()
+    yield
+    structlog.contextvars.clear_contextvars()
+
+
 @pytest_asyncio.fixture
 async def client():
     transport = ASGITransport(app=app)

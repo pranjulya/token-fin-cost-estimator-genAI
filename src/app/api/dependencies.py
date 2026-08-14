@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 
+import structlog
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,4 +112,9 @@ async def generation_service_dep(
 
 
 def new_request_id() -> str:
+    # Prefer the middleware-bound request_id so the response body agrees with
+    # logs/headers; fall back to a fresh id when called outside a request.
+    bound = structlog.contextvars.get_contextvars().get("request_id")
+    if bound:
+        return bound
     return f"req_{uuid.uuid4().hex[:24]}"

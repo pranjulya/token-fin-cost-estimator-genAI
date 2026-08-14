@@ -14,6 +14,7 @@ from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import GenerationAlreadyRecordedError
+from app.core.metrics import metrics, span
 from app.db.models import UsageRecord
 from app.providers.pricing.base import PricingProvider
 from app.repositories.usage_repository import UsageRepository
@@ -205,4 +206,15 @@ class UsageService:
         # Idempotent retries return early above, so alerts never double-fire.
         if self._alerts is not None and record.status == "SUCCESS":
             await self._alerts.maybe_cost_anomaly(record)
+
+        # Phase 16 metrics (PRD §35).
+        with span("usage_reconciliation"):
+            metrics.record_usage(
+                provider=provider,
+                model=model,
+                input_tokens=actual_input_tokens,
+                output_tokens=actual_output_tokens,
+                actual_cost=float(actual_cost),
+                estimated_cost=float(estimated_cost or Decimal("0")),
+            )
         return record

@@ -27,6 +27,7 @@ from app.core.exceptions import (
     ProviderError,
 )
 from app.core.logging import get_logger
+from app.core.metrics import metrics, span
 from app.domain.budget import BudgetDecision
 from app.providers.llm.base import LLMProvider
 from app.services.cost_estimator import CostEstimator, Estimation
@@ -121,6 +122,9 @@ class GenerationService:
                     status=decision.status,
                     estimated_cost=str(E),
                 )
+                metrics.record_budget_rejection(
+                    provider=provider, model=model, reason=decision.status
+                )
                 raise BudgetExceededError(
                     f"Budget exceeded for request_id='{rid}': status=BLOCK "
                     f"remaining_before={decision.remaining_before} "
@@ -144,12 +148,13 @@ class GenerationService:
 
         try:
             llm = self._get_llm(provider)
-            completion = await llm.complete(
-                model=model,
-                prompt=input_text,
-                max_output_tokens=max_output_tokens,
-                request_id=rid,
-            )
+            with span("llm_provider"):
+                completion = await llm.complete(
+                    model=model,
+                    prompt=input_text,
+                    max_output_tokens=max_output_tokens,
+                    request_id=rid,
+                )
         except AppError:
             if reserved:
                 await self._budget_service.release(budget, E, request_id=rid)

@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
+from app.core.metrics import metrics
 from app.db.models import Alert, Budget, UsageRecord
 from app.domain import alerts as alert_policy
 from app.domain.budget import BudgetDecision
@@ -167,6 +168,12 @@ class AlertService:
                 dedupe_key=row.dedupe_key,
                 message=row.message,
             )
+            # Phase 16 metric (PRD §35): cost anomaly alerts.
+            if row.alert_type == alert_policy.COST_ANOMALY:
+                metrics.record_anomaly(
+                    provider=candidate.metadata.get("provider", ""),
+                    model=candidate.metadata.get("model", ""),
+                )
         return row
 
     # --- read/ack (API) --------------------------------------------------------

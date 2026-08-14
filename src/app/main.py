@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.handlers import register_exception_handlers
+from app.api.middleware import ObservabilityMiddleware
 from app.api.v1.router import api_router, health_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.add_middleware(ObservabilityMiddleware)
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(api_router)

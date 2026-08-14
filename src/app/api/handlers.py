@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -19,8 +20,14 @@ VALIDATION_STATUS = 422
 
 
 def _request_id(request: Request, exc: AppError | None = None) -> str:
+    # Prefer the exception's business request_id (e.g. client-supplied body id
+    # referenced in the error message), then the middleware-bound correlation
+    # id, then the header, then a fresh id for direct calls.
     if exc is not None and getattr(exc, "request_id", None):
         return exc.request_id
+    bound = structlog.contextvars.get_contextvars().get("request_id")
+    if bound:
+        return bound
     return request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:16]}"
 
 
