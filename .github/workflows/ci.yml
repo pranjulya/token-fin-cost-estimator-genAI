@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_DB: token_cost_estimator_test
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      APP_DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/token_cost_estimator_test
+      APP_API_KEYS: test-user-key
+      APP_ADMIN_API_KEYS: test-admin-key
+      APP_RATE_LIMIT_PER_MINUTE: "1000"
+      APP_RATE_LIMIT_GENERATE_PER_MINUTE: "1000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: |
+          uv run ruff check src tests scripts
+          uv run ruff format --check src tests scripts
+
+      - name: Type check (mypy)
+        run: uv run mypy src
+
+      - name: Unit tests
+        run: uv run pytest tests/unit -p no:cacheprovider
+
+      - name: Integration + contract tests
+        run: uv run pytest tests/integration tests/contract -p no:cacheprovider
+
+      - name: Security scan (pip-audit)
+        run: uvx pip-audit
+
+      - name: Security scan (secrets)
+        run: bash scripts/security_scan.sh
+
+      - name: Build container
+        run: docker build -t token-cost-estimator:ci .

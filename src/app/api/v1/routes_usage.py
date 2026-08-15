@@ -23,23 +23,25 @@ router = APIRouter(tags=["usage"])
 async def create_usage(
     body: UsageCreate, service: UsageService = Depends(usage_service_dep)
 ) -> UsageOut:
-    return await service.record(
-        request_id=body.request_id,
-        correlation_id=body.correlation_id,
-        provider=body.provider,
-        model=body.model,
-        application_id=body.application_id,
-        team_id=body.team_id,
-        user_id=body.user_id,
-        endpoint=body.endpoint,
-        environment=body.environment,
-        estimated_input_tokens=body.estimated_input_tokens,
-        estimated_output_tokens=body.estimated_output_tokens,
-        estimated_cost=body.estimated_cost,
-        actual_input_tokens=body.actual_input_tokens,
-        cached_input_tokens=body.cached_input_tokens,
-        actual_output_tokens=body.actual_output_tokens,
-        status=body.status,
+    return UsageOut.model_validate(
+        await service.record(
+            request_id=body.request_id,
+            correlation_id=body.correlation_id,
+            provider=body.provider,
+            model=body.model,
+            application_id=body.application_id,
+            team_id=body.team_id,
+            user_id=body.user_id,
+            endpoint=body.endpoint,
+            environment=body.environment,
+            estimated_input_tokens=body.estimated_input_tokens,
+            estimated_output_tokens=body.estimated_output_tokens,
+            estimated_cost=body.estimated_cost,
+            actual_input_tokens=body.actual_input_tokens,
+            cached_input_tokens=body.cached_input_tokens,
+            actual_output_tokens=body.actual_output_tokens,
+            status=body.status,
+        )
     )
 
 
@@ -49,7 +51,8 @@ async def list_usage(
     offset: int = Query(0, ge=0),
     repo: UsageRepository = Depends(usage_repo_dep),
 ) -> list[UsageOut]:
-    return await repo.list_records(limit=limit, offset=offset)
+    rows = await repo.list_records(limit=limit, offset=offset)
+    return [UsageOut.model_validate(r) for r in rows]
 
 
 @router.get("/usage/summary", response_model=UsageSummary)

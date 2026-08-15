@@ -24,10 +24,10 @@ def _request_id(request: Request, exc: AppError | None = None) -> str:
     # referenced in the error message), then the middleware-bound correlation
     # id, then the header, then a fresh id for direct calls.
     if exc is not None and getattr(exc, "request_id", None):
-        return exc.request_id
+        return str(exc.request_id)
     bound = structlog.contextvars.get_contextvars().get("request_id")
     if bound:
-        return bound
+        return str(bound)
     return request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:16]}"
 
 

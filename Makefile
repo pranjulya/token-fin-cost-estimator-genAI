@@ -1,5 +1,5 @@
 # Makefile — dev workflow for the GenAI token cost estimator
-.PHONY: help setup test test-unit test-integration test-db seed run migrate lint format demo
+.PHONY: help setup test test-unit test-integration test-db seed run migrate lint format typecheck security-check demo
 
 PY := uv run python
 
@@ -44,3 +44,9 @@ lint:  ## Lint and format-check with ruff
 format:  ## Auto-format with ruff
 	uv run ruff format src tests scripts
 	uv run ruff check --fix src tests scripts
+
+typecheck:  ## Run mypy on src/
+	uv run mypy src
+
+security-check:  ## Dependency audit + committed-secret grep
+	bash scripts/security_scan.sh

@@ -141,7 +141,7 @@ class GenerationService:
 
         # Budget is the product gate: rule out BLOCK before touching the provider.
         if provider != "openai":
-            if reserved:
+            if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
                 await self._session_commit()
             raise ModelNotSupportedError(provider, model, request_id=rid)
@@ -156,12 +156,12 @@ class GenerationService:
                     request_id=rid,
                 )
         except AppError:
-            if reserved:
+            if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
                 await self._session_commit()
             raise
         except Exception as exc:
-            if reserved:
+            if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
                 await self._session_commit()
             raise ProviderError(f"Provider call failed: {exc}", request_id=rid) from exc
@@ -198,14 +198,14 @@ class GenerationService:
                 status="SUCCESS",
             )
         except GenerationAlreadyRecordedError:
-            if reserved:
+            if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
                 await self._session_commit()
             raise
 
         A = record.actual_cost or Decimal("0")
 
-        if reserved:
+        if reserved and budget is not None:
             await self._budget_service.settle(
                 budget, reserved_amount=E, actual_amount=A, request_id=rid
             )

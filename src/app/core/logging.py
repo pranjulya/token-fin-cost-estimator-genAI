@@ -53,6 +53,7 @@ def configure_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
     root.setLevel(level)
 
+    renderer: structlog.dev.ConsoleRenderer | structlog.processors.JSONRenderer
     if settings.environment.lower() == "production":
         renderer = structlog.processors.JSONRenderer()
     else:

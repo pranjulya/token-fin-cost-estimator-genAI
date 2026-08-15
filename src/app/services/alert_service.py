@@ -113,6 +113,8 @@ class AlertService:
             return None
 
     async def _emit_cost_anomaly(self, record: UsageRecord) -> Alert | None:
+        if self._usage_repository is None:
+            return None
         # 1) Baseline (repo-isolated SELECT, excludes this request_id).
         avg, n = await self._usage_repository.historical_avg_cost(
             provider=record.provider,
@@ -125,7 +127,7 @@ class AlertService:
             request_id=record.request_id,
             provider=record.provider,
             model=record.model,
-            actual_cost=record.actual_cost,
+            actual_cost=record.actual_cost or Decimal("0"),
             estimated_cost=record.estimated_cost,
             variance_percent=record.variance_percent,
             historical_avg=avg,
