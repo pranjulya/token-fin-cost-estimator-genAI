@@ -1,13 +1,26 @@
-# Token Cost Estimator — FinOps service (vertical slice)
+# Token Cost Estimator — GenAI FinOps service
 
 Estimate LLM cost before generation, track actual usage after, attribute spend,
-and reconcile estimate vs actual — with Decimal-safe money math and frozen
-pricing history.
+reconcile estimate vs actual, enforce budgets atomically, and raise cost
+anomaly alerts — with Decimal-safe money math and frozen pricing history.
 
 > **Budget preflight:** `POST /v1/cost/estimate` is **evaluate-only** — it returns
 > a budget envelope (`ALLOW`/`WARN`/`CRITICAL`/`BLOCK`) but does **not** reserve
 > spend or write budget events. `POST /v1/generate` (Phase 14–15) is the only
 > path that reserves and settles.
+
+## Docs
+
+| Doc | Contents |
+|---|---|
+| [architecture](docs/architecture.md) | layers, provider abstractions, estimate/generate flows, Postgres-vs-Redis |
+| [api](docs/api.md) | full route reference, auth scopes, error envelope |
+| [database](docs/database.md) | table-by-table design + money/idempotency rules |
+| [security](docs/security.md) | API keys, admin scope, rate limits, redaction, audit |
+| [observability](docs/observability.md) | logs, correlation IDs, metrics, spans |
+| [testing](docs/testing.md) | test layers, the concurrency proof, CI pipeline |
+| [production-scenarios](docs/production-scenarios.md) | PRD §37 failure/distributed cases |
+| [Learning](Learning/) | learning path + interview Q&A |
 
 ## Docker (Phase 19)
 
@@ -189,13 +202,8 @@ tests/           unit + integration
 
 Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
 reservations, alert system), Phases 14–15 (`LLMProvider` + `POST /v1/generate`
-end-to-end reserve → call → settle), Phase 16 (observability: structured
-request logs, correlation IDs, Prometheus `/metrics`, span events), Phase 17
-(security: API-key auth + admin scope, rate limiting, input limits, log
-redaction, audit events), and Phase 18 (comprehensive testing: concurrency,
-failure-mode, contract, load smoke).
+end-to-end reserve → call → settle), Phase 16 (observability), Phase 17
+(security), Phase 18 (comprehensive testing), Phase 19 (Dockerization),
+Phase 20 (CI pipeline), and Phase 21 (documentation).
 
-Next:
-
-1. Dockerization: app container, Postgres, docker-compose, health checks (Phase 19).
-2. CI pipeline: checkout → install → lint → type check → tests → build (Phase 20).
+Next: Phase 22 — portfolio demo (team budget = $10 walkthrough).
