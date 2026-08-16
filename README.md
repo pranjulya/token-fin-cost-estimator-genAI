@@ -14,6 +14,7 @@ anomaly alerts — with Decimal-safe money math and frozen pricing history.
 | Doc | Contents |
 |---|---|
 | [architecture](docs/architecture.md) | layers, provider abstractions, estimate/generate flows, Postgres-vs-Redis |
+| [adr](docs/adr/) | architecture decision records (Decimal money, fail-closed budget, no prompt persistence, …) |
 | [api](docs/api.md) | full route reference, auth scopes, error envelope |
 | [database](docs/database.md) | table-by-table design + money/idempotency rules |
 | [security](docs/security.md) | API keys, admin scope, rate limits, redaction, audit |

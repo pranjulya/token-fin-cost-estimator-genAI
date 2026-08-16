@@ -72,6 +72,8 @@ The PRD originally called for Redis atomic counters, but this service uses a
 Postgres `budget_consumption` row locked with `SELECT ... FOR UPDATE` plus a
 savepoint insert-if-absent. It gives the same race-free guarantee with no
 extra infrastructure; Redis was intentionally omitted from docker-compose.
+This and the other key decisions are recorded as [Architecture Decision
+Records](adr/).
 
 ## Concurrency guarantees
 
