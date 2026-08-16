@@ -50,3 +50,6 @@ typecheck:  ## Run mypy on src/
 
 security-check:  ## Dependency audit + committed-secret grep
 	bash scripts/security_scan.sh
+
+demo:  ## Run the Phase 22 portfolio demo (team budget = $10 walkthrough)
+	uv run python scripts/demo.py

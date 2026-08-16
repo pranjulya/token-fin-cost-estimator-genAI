@@ -20,6 +20,7 @@ anomaly alerts — with Decimal-safe money math and frozen pricing history.
 | [observability](docs/observability.md) | logs, correlation IDs, metrics, spans |
 | [testing](docs/testing.md) | test layers, the concurrency proof, CI pipeline |
 | [production-scenarios](docs/production-scenarios.md) | PRD §37 failure/distributed cases |
+| [demo](docs/demo.md) | `make demo` — the team-budget-$10 portfolio walkthrough |
 | [Learning](Learning/) | learning path + interview Q&A |
 
 ## Docker (Phase 19)
@@ -198,12 +199,14 @@ scripts/         seed_pricing.py
 tests/           unit + integration
 ```
 
-## Roadmap (next phases from the PRD)
+## Roadmap
 
-Implemented: Phases 0–13 (vertical slice, budgets with Postgres-atomic
-reservations, alert system), Phases 14–15 (`LLMProvider` + `POST /v1/generate`
-end-to-end reserve → call → settle), Phase 16 (observability), Phase 17
-(security), Phase 18 (comprehensive testing), Phase 19 (Dockerization),
-Phase 20 (CI pipeline), and Phase 21 (documentation).
+**All PRD phases (0–22) are implemented.**
 
-Next: Phase 22 — portfolio demo (team budget = $10 walkthrough).
+- Phases 0–13: vertical slice, budgets (Postgres-atomic reservations), alerts.
+- Phases 14–15: `LLMProvider` + `POST /v1/generate` reserve→call→settle.
+- Phase 16: observability. Phase 17: security. Phase 18: comprehensive testing.
+- Phase 19: Docker. Phase 20: CI. Phase 21: documentation.
+- Phase 22: portfolio demo (`make demo`).
+
+See the [demo](docs/demo.md) to run the $10 team-budget walkthrough.
