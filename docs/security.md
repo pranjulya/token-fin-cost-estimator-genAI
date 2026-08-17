@@ -27,7 +27,11 @@ without Redis):
 | `APP_RATE_LIMIT_PER_MINUTE` (default 60) | `POST /v1/usage`, `POST /v1/cost/estimate` |
 | `APP_RATE_LIMIT_GENERATE_PER_MINUTE` (default 10) | `POST /v1/generate` (spends money) |
 
-Exceeded → `429 RATE_LIMITED`.
+Exceeded → `429 RATE_LIMITED` with a `Retry-After` header. The limiter is
+in-memory and process-local (per-key token buckets with amortized stale-bucket
+eviction); a multi-replica deployment would multiply the effective limit, so
+move to a gateway or Redis-backed limiter when scaling beyond one app
+instance.
 
 ### Input limits
 
@@ -50,6 +54,11 @@ The actor is a key prefix (`key:abcd...wxyz`), never the raw key.
 
 ## Deployment notes (documented, not implemented here)
 
+- **Production compose** — `docker-compose.prod.yml` overlays the dev file:
+  no published DB port, secrets from env (fails fast if unset),
+  `APP_ENVIRONMENT=production` (boot guard + docs off), seed off. Run:
+  `POSTGRES_PASSWORD=... APP_API_KEYS=... APP_ADMIN_API_KEYS=... docker compose
+  -f docker-compose.yml -f docker-compose.prod.yml up -d`.
 - **TLS** — terminate at a reverse proxy / load balancer in production.
 - **Secrets** — API keys and `APP_OPENAI_API_KEY` come from env/secrets
   manager, never committed (`.env` is gitignored; `.dockerignore` excludes it).

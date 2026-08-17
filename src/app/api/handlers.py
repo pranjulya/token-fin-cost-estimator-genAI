@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.exceptions import AppError, ErrorCode
+from app.core.exceptions import AppError, ErrorCode, RateLimitError
 from app.schemas.common import ErrorDetail, GenericError
 
 VALIDATION_STATUS = 422
@@ -37,6 +37,19 @@ def _error_response(code: str, message: str, request_id: str, status: int) -> JS
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(RateLimitError)
+    async def _rate_limit_error(request: Request, exc: RateLimitError) -> JSONResponse:
+        # Attach Retry-After so clients know when to try again (429 semantics).
+        headers = None
+        if exc.retry_after_seconds is not None:
+            headers = {"Retry-After": str(exc.retry_after_seconds)}
+        body = GenericError(
+            error=ErrorDetail(
+                code=exc.code, message=exc.message, request_id=_request_id(request, exc)
+            )
+        )
+        return JSONResponse(status_code=exc.status_code, content=body.model_dump(), headers=headers)
+
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
         return _error_response(exc.code, exc.message, _request_id(request, exc), exc.status_code)
