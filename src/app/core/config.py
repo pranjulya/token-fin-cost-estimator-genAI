@@ -1,10 +1,17 @@
 """Application configuration loaded from environment / .env."""
 
+import hashlib
+import hmac
 from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def sha256_hex(secret: str) -> str:
+    """Hex sha256 digest of a secret (for hashed-at-rest API keys)."""
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
 
 
 class Settings(BaseSettings):
@@ -62,6 +69,11 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 60
     rate_limit_generate_per_minute: int = 10
 
+    # When true, APP_API_KEYS / APP_ADMIN_API_KEYS are treated as pre-hashed
+    # sha256 hex digests (see scripts/hash_api_keys.py) and incoming keys are
+    # compared via hmac.compare_digest. Keys are never stored in plaintext.
+    auth_hash_keys: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -74,11 +86,26 @@ class Settings(BaseSettings):
     def admin_api_key_set(self) -> set[str]:
         return {k.strip() for k in self.admin_api_keys.split(",") if k.strip()}
 
+    def _matches(self, key: str, configured: set[str]) -> bool:
+        """Constant-time match of an incoming key against configured values.
+
+        When auth_hash_keys is on, the configured values are sha256 hex
+        digests and the incoming key is hashed before comparison.
+        """
+        if not configured:
+            return False
+        if self.auth_hash_keys:
+            digest = sha256_hex(key)
+            return any(hmac.compare_digest(digest, h) for h in configured)
+        return any(hmac.compare_digest(key, k) for k in configured)
+
     def is_valid_key(self, key: str) -> bool:
-        return key in self.user_api_key_set or key in self.admin_api_key_set
+        return self._matches(key, self.user_api_key_set) or self._matches(
+            key, self.admin_api_key_set
+        )
 
     def is_admin_key(self, key: str) -> bool:
-        return key in self.admin_api_key_set
+        return self._matches(key, self.admin_api_key_set)
 
 
 @lru_cache

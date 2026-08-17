@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app.api.auth import _extract_key, require_admin
-from app.core.config import get_settings
+from app.core.config import get_settings, sha256_hex
 from app.core.exceptions import AuthorizationError
 
 _ENV_KEYS = ("APP_API_KEYS", "APP_ADMIN_API_KEYS")
@@ -64,3 +64,37 @@ def test_authentication_error_status():
     from app.core.exceptions import AuthenticationError
 
     assert AuthenticationError("x").status_code == 401
+
+
+def test_hashed_keys_match_and_reject(monkeypatch):
+    """APP_AUTH_HASH_KEYS=true compares sha256 digests, not plaintext."""
+    user_digest = sha256_hex("user-1")
+    admin_digest = sha256_hex("admin-1")
+    monkeypatch.setenv("APP_API_KEYS", user_digest)
+    monkeypatch.setenv("APP_ADMIN_API_KEYS", admin_digest)
+    monkeypatch.setenv("APP_AUTH_HASH_KEYS", "true")
+    get_settings.cache_clear()
+    try:
+        s = get_settings()
+        # The configured value is the hash, not the plaintext.
+        assert "user-1" not in s.api_keys
+        assert s.is_valid_key("user-1")  # correct key hashes to match
+        assert s.is_admin_key("admin-1")
+        assert not s.is_valid_key("wrong")
+        assert not s.is_admin_key("user-1")  # user key is not admin
+    finally:
+        get_settings.cache_clear()
+
+
+def test_plaintext_compare_uses_constant_time(monkeypatch):
+    """Even without hashing, comparison goes through hmac.compare_digest."""
+    monkeypatch.setenv("APP_API_KEYS", "user-1")
+    monkeypatch.setenv("APP_ADMIN_API_KEYS", "admin-1")
+    monkeypatch.setenv("APP_AUTH_HASH_KEYS", "false")
+    get_settings.cache_clear()
+    try:
+        s = get_settings()
+        assert s.is_valid_key("user-1")
+        assert not s.is_valid_key("user-2")
+    finally:
+        get_settings.cache_clear()
