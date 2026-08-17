@@ -61,8 +61,17 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(SQLAlchemyError)
     async def _db_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+        # Log the full traceback (with correlation id) so prod DB failures are
+        # diagnosable; keep the client message generic.
+        request_id = _request_id(request)
+        logger = structlog.get_logger("app.errors")
+        logger.exception(
+            "db_error",
+            request_id=request_id,
+            endpoint=f"{request.method} {request.url.path}",
+        )
         return _error_response(
-            ErrorCode.DATABASE_ERROR, "Database operation failed.", _request_id(request), 500
+            ErrorCode.DATABASE_ERROR, "Database operation failed.", request_id, 500
         )
 
     @app.exception_handler(Exception)
