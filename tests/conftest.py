@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import os
 
-os.environ["APP_DATABASE_URL"] = (
-    "postgresql+psycopg://pranjulyabajpai@localhost:5432/token_cost_estimator_test"
-)
+os.environ["APP_DATABASE_URL"] = "postgresql+psycopg://localhost:5432/token_cost_estimator_test"
 # Phase 17: default API keys for the test suite. Existing integration tests
 # authenticate as the user key; tests needing admin use the admin key explicitly.
 os.environ["APP_API_KEYS"] = "test-user-key"

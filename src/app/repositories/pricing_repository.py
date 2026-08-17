@@ -21,8 +21,9 @@ class PricingRepository:
         """Return the currently-effective price for a model.
 
         Resolution: latest version among rows whose effective interval contains
-        today. Falls back to the highest version if no interval matches (e.g.
-        open-ended rows with only effective_from set).
+        today. Fail-closed: if NO row's window contains today (all expired, or
+        all future-dated), raise ModelPricingNotFoundError — a price that
+        doesn't apply today must not be used to estimate or charge.
         """
         today = date.today()
         stmt = (
@@ -41,8 +42,8 @@ class PricingRepository:
                 continue
             return self._to_domain(row)
 
-        # No interval matches today; prefer the most recent version.
-        return self._to_domain(rows[0])
+        # No interval matches today — fail closed rather than guess.
+        raise ModelPricingNotFoundError(provider, model)
 
     async def list_all(self) -> list[ModelPricing]:
         stmt = select(ModelPricing).order_by(

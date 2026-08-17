@@ -13,6 +13,7 @@ anomaly alerts — with Decimal-safe money math and frozen pricing history.
 
 | Doc | Contents |
 |---|---|
+| [prd](docs/prd.md) | the full 22-phase PRD (source spec) |
 | [architecture](docs/architecture.md) | layers, provider abstractions, estimate/generate flows, Postgres-vs-Redis |
 | [adr](docs/adr/) | architecture decision records (Decimal money, fail-closed budget, no prompt persistence, …) |
 | [api](docs/api.md) | full route reference, auth scopes, error envelope |

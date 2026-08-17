@@ -25,10 +25,24 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    prod = settings.environment != "development"
+
+    # Production boot guard: refuse to start without API keys and hide docs.
+    # A FinOps service must never boot with auth disabled in prod.
+    if prod:
+        if not settings.api_keys or not settings.admin_api_keys:
+            raise RuntimeError(
+                "APP_API_KEYS and APP_ADMIN_API_KEYS are required when "
+                f"APP_ENVIRONMENT='{settings.environment}' (not 'development')."
+            )
+
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None if prod else "/docs",
+        redoc_url=None if prod else "/redoc",
+        openapi_url=None if prod else "/openapi.json",
     )
     app.add_middleware(ObservabilityMiddleware)
     register_exception_handlers(app)

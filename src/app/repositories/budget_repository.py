@@ -6,10 +6,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import InvalidRequestError
 from app.db.models import Budget, BudgetConsumption, BudgetEvent
 
 
@@ -37,6 +38,17 @@ class BudgetRepository:
         starts_at: datetime | None,
         ends_at: datetime | None,
     ) -> Budget:
+        if await self._has_overlap(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            exclude_id=None,
+            starts_at=starts_at,
+            ends_at=ends_at,
+        ):
+            raise InvalidRequestError(
+                f"An active budget already exists for scope {scope_type}={scope_id}; "
+                "a new budget must not overlap it."
+            )
         row = Budget(
             scope_type=scope_type,
             scope_id=scope_id,
@@ -60,27 +72,77 @@ class BudgetRepository:
         """Return the active budget for a scope, or None.
 
         A budget is active when its [starts_at, ends_at) window contains now
-        (null bounds are open-ended). If several match, prefer the most recent.
+        (null bounds are open-ended). If several match, prefer the most recent
+        created. The window filter runs IN SQL so a newer-but-not-yet-active
+        (or expired) budget can't shadow an older active one.
         """
         now = _utcnow()
         stmt = (
             select(Budget)
-            .where(Budget.scope_type == scope_type, Budget.scope_id == scope_id)
+            .where(
+                Budget.scope_type == scope_type,
+                Budget.scope_id == scope_id,
+                or_(
+                    Budget.starts_at.is_(None),
+                    Budget.starts_at <= now,
+                ),
+                or_(
+                    Budget.ends_at.is_(None),
+                    Budget.ends_at > now,
+                ),
+            )
             .order_by(Budget.created_at.desc())
         )
-        row = await self._session.scalar(stmt)
-        if row is None:
-            return None
-        if row.starts_at is not None and row.starts_at > now:
-            return None
-        if row.ends_at is not None and row.ends_at <= now:
-            return None
-        return row
+        return await self._session.scalar(stmt)
+
+    async def _has_overlap(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        exclude_id: int | None,
+        starts_at: datetime | None,
+        ends_at: datetime | None,
+    ) -> bool:
+        """True when an existing budget for the scope overlaps [starts_at, ends_at).
+
+        Open-ended (NULL) bounds match any window. Used to keep at most one
+        active budget per scope: creating/updating a budget that would overlap
+        an existing one is rejected.
+        """
+        stmt = select(Budget).where(
+            Budget.scope_type == scope_type,
+            Budget.scope_id == scope_id,
+        )
+        if exclude_id is not None:
+            stmt = stmt.where(Budget.id != exclude_id)
+        rows = list((await self._session.scalars(stmt)).all())
+        for row in rows:
+            # Existing window [s1, e1), candidate window [s2, e2). Overlap
+            # unless one ends before the other starts (NULL = unbounded).
+            s1, e1 = row.starts_at, row.ends_at
+            s2, e2 = starts_at, ends_at
+            if (e1 is None or s2 is None or e1 > s2) and (e2 is None or s1 is None or e2 > s1):
+                return True
+        return False
 
     async def update(self, budget: Budget, **fields: Any) -> Budget:
         for key, value in fields.items():
             if value is not None or key == "ends_at":
                 setattr(budget, key, value)
+        # Guard: an updated window must not overlap another active budget for
+        # the same scope.
+        if await self._has_overlap(
+            scope_type=budget.scope_type,
+            scope_id=budget.scope_id,
+            exclude_id=budget.id,
+            starts_at=budget.starts_at,
+            ends_at=budget.ends_at,
+        ):
+            raise InvalidRequestError(
+                f"Updating budget {budget.id} would overlap another active budget "
+                f"for scope {budget.scope_type}={budget.scope_id}."
+            )
         await self._session.flush()
         return budget
 

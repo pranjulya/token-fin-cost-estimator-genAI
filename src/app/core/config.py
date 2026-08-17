@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
-    database_url: str = Field(
-        default="postgresql+psycopg://pranjulyabajpai@localhost:5432/token_cost_estimator"
-    )
+    # Docker entrypoint seeds idempotent pricing on boot only when true.
+    seed_on_boot: bool = False
+
+    database_url: str = Field(default="postgresql+psycopg://localhost:5432/token_cost_estimator")
 
     # Estimate guardrails
     max_prompt_chars: int = 200_000
