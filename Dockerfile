@@ -22,7 +22,9 @@ COPY alembic.ini ./
 COPY scripts/docker_entrypoint.sh /usr/local/bin/docker_entrypoint
 RUN chmod +x /usr/local/bin/docker_entrypoint \
     && useradd --create-home --uid 10001 appuser \
-    && chown -R appuser:appuser /app
+    # The runtime user owns only what it must write; source stays root-owned
+    # and read-only so a compromised process cannot tamper with code.
+    && chown -R root:root /app
 
 # Run as non-root (production hygiene).
 USER appuser

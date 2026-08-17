@@ -21,7 +21,7 @@ services:
       APP_DATABASE_URL: postgresql+psycopg://token_cost_estimator:token_cost_estimator_dev@db:5432/token_cost_estimator
       APP_ENVIRONMENT: development
       # Seed pricing on boot only in dev; prod must seed explicitly.
-      APP_SEED_ON_BOOT: "true"
+      APP_SEED_PRICING: "true"
       # Money-spending endpoint is off by default. Set APP_OPENAI_API_KEY and
       # flip APP_GENERATE_ENABLED=true to enable /v1/generate.
       APP_GENERATE_ENABLED: "false"
