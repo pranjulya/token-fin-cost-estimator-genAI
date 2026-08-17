@@ -38,4 +38,16 @@ class Budget(Base, PKMixin, TimestampMixin):
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (Index("ix_budgets_scope", "scope_type", "scope_id"),)
+    __table_args__ = (
+        Index("ix_budgets_scope", "scope_type", "scope_id"),
+        # At most one fully-unbounded (no start AND no end) budget per scope.
+        # Windowed budgets are kept unambiguous by the repository overlap
+        # guard, which runs at create/update time.
+        Index(
+            "uq_budgets_scope_unbounded",
+            "scope_type",
+            "scope_id",
+            unique=True,
+            postgresql_where=((starts_at.is_(None)) & (ends_at.is_(None))),
+        ),
+    )

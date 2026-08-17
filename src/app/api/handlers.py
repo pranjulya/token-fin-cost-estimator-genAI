@@ -67,6 +67,13 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _internal_error(request: Request, exc: Exception) -> JSONResponse:
-        return _error_response(
-            ErrorCode.INTERNAL_ERROR, "Internal server error.", _request_id(request), 500
+        # Log the full traceback with the correlation id bound so production
+        # exceptions are diagnosable without leaking details to the client.
+        request_id = _request_id(request)
+        logger = structlog.get_logger("app.errors")
+        logger.exception(
+            "unhandled_exception",
+            request_id=request_id,
+            endpoint=f"{request.method} {request.url.path}",
         )
+        return _error_response(ErrorCode.INTERNAL_ERROR, "Internal server error.", request_id, 500)

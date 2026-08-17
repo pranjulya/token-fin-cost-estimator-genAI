@@ -58,3 +58,63 @@ class TestPricingRepository:
         await _seed(db_session, cached=None)
         price = await PricingRepository(db_session).get_effective("openai", "gpt-4o")
         assert price.cached_input_per_million is None
+
+    async def test_all_expired_fails_closed(self, db_session):
+        """Every row's window has ended -> no price applies today -> 404."""
+        repo = PricingRepository(db_session)
+        await repo.create(
+            provider="openai",
+            model="gpt-3.5",
+            input_per_million=Decimal("1.00"),
+            output_per_million=Decimal("2.00"),
+            effective_from=date(2020, 1, 1),
+            effective_to=date(2020, 12, 31),
+        )
+        await repo.create(
+            provider="openai",
+            model="gpt-3.5",
+            input_per_million=Decimal("1.50"),
+            output_per_million=Decimal("3.00"),
+            effective_from=date(2021, 1, 1),
+            effective_to=date(2021, 12, 31),
+        )
+        await db_session.commit()
+        with pytest.raises(ModelPricingNotFoundError):
+            await repo.get_effective("openai", "gpt-3.5")
+
+    async def test_all_future_dated_fails_closed(self, db_session):
+        """Only future-dated rows exist -> no price applies today -> 404."""
+        repo = PricingRepository(db_session)
+        await repo.create(
+            provider="openai",
+            model="gpt-5",
+            input_per_million=Decimal("5.00"),
+            output_per_million=Decimal("20.00"),
+            effective_from=date(2030, 1, 1),
+        )
+        await db_session.commit()
+        with pytest.raises(ModelPricingNotFoundError):
+            await repo.get_effective("openai", "gpt-5")
+
+    async def test_expired_latest_version_does_not_shadow_active(self, db_session):
+        """A newer-but-expired version must not win over an older active one."""
+        repo = PricingRepository(db_session)
+        await repo.create(
+            provider="openai",
+            model="gpt-4o-mini",
+            input_per_million=Decimal("0.15"),
+            output_per_million=Decimal("0.60"),
+            effective_from=date(2024, 1, 1),
+            effective_to=date(2024, 12, 31),  # v1: expired
+        )
+        await repo.create(
+            provider="openai",
+            model="gpt-4o-mini",
+            input_per_million=Decimal("0.20"),
+            output_per_million=Decimal("0.80"),
+            effective_from=date(2025, 1, 1),  # v2: open-ended, active
+        )
+        await db_session.commit()
+        price = await repo.get_effective("openai", "gpt-4o-mini")
+        assert price.version == 2
+        assert price.input_per_million == Decimal("0.20")

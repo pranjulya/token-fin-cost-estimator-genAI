@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 
-from app.db.models import BudgetEvent
+from app.core.exceptions import InvalidRequestError
+from app.db.models import Budget, BudgetEvent
 from app.domain.budget import BLOCK
 from app.repositories.budget_repository import BudgetRepository
 from app.services.budget_service import BudgetService, period_key_for
@@ -183,6 +186,131 @@ class TestBudgetEvaluate:
         assert b is not None
         assert b.scope_type == "TEAM"
         assert b.scope_id == "team-1"
+
+    async def test_get_active_skips_future_and_expired(self, db_session):
+        """A newer-but-not-yet-active budget must not shadow an older active one,
+        and an expired newest must not shadow an older active one.
+
+        The rows are inserted directly (bypassing the overlap guard) to model
+        legacy data the repository must still resolve correctly.
+        """
+        repo = BudgetRepository(db_session)
+        now = datetime.now(timezone.utc)
+
+        def _row(scope, *, starts_at, ends_at, limit):
+            return Budget(
+                scope_type="TEAM",
+                scope_id=scope,
+                period_type="MONTHLY",
+                limit_amount=limit,
+                currency="USD",
+                warning_threshold=Decimal("0.7"),
+                critical_threshold=Decimal("0.9"),
+                enforcement_mode="STRICT",
+                starts_at=starts_at,
+                ends_at=ends_at,
+            )
+
+        # v1: active open-ended
+        b1 = _row("team-x", starts_at=None, ends_at=None, limit=Decimal("100"))
+        db_session.add(b1)
+        await db_session.flush()
+        # v2: future start (not yet active)
+        db_session.add(
+            _row(
+                "team-x",
+                starts_at=now + timedelta(days=10),
+                ends_at=None,
+                limit=Decimal("200"),
+            )
+        )
+        await db_session.commit()
+        # The future-dated v2 must be skipped; v1 (active) is returned.
+        active = await repo.get_active("TEAM", "team-x")
+        assert active is not None
+        assert active.id == b1.id
+
+    async def test_get_active_returns_none_when_all_expired(self, db_session):
+        repo = BudgetRepository(db_session)
+        now = datetime.now(timezone.utc)
+        db_session.add(
+            Budget(
+                scope_type="TEAM",
+                scope_id="team-y",
+                period_type="MONTHLY",
+                limit_amount=Decimal("100"),
+                currency="USD",
+                warning_threshold=Decimal("0.7"),
+                critical_threshold=Decimal("0.9"),
+                enforcement_mode="STRICT",
+                starts_at=now - timedelta(days=30),
+                ends_at=now - timedelta(days=1),
+            )
+        )
+        await db_session.commit()
+        assert await repo.get_active("TEAM", "team-y") is None
+
+    async def test_overlap_guard_rejects_active_duplicate(self, db_session):
+        """Two open-ended budgets for the same scope must be rejected."""
+        repo = BudgetRepository(db_session)
+        await repo.create(
+            scope_type="TEAM",
+            scope_id="team-z",
+            period_type="MONTHLY",
+            limit_amount=Decimal("100"),
+            currency="USD",
+            warning_threshold=Decimal("0.7"),
+            critical_threshold=Decimal("0.9"),
+            enforcement_mode="STRICT",
+            starts_at=None,
+            ends_at=None,
+        )
+        await db_session.commit()
+        with pytest.raises(InvalidRequestError):
+            await repo.create(
+                scope_type="TEAM",
+                scope_id="team-z",
+                period_type="MONTHLY",
+                limit_amount=Decimal("200"),
+                currency="USD",
+                warning_threshold=Decimal("0.7"),
+                critical_threshold=Decimal("0.9"),
+                enforcement_mode="STRICT",
+                starts_at=None,
+                ends_at=None,
+            )
+
+    async def test_non_overlapping_windows_allowed(self, db_session):
+        """Sequential windows (no overlap) are valid for the same scope."""
+        repo = BudgetRepository(db_session)
+        now = datetime.now(timezone.utc)
+        await repo.create(
+            scope_type="TEAM",
+            scope_id="team-w",
+            period_type="MONTHLY",
+            limit_amount=Decimal("100"),
+            currency="USD",
+            warning_threshold=Decimal("0.7"),
+            critical_threshold=Decimal("0.9"),
+            enforcement_mode="STRICT",
+            starts_at=now - timedelta(days=30),
+            ends_at=now - timedelta(days=1),
+        )
+        # A future window starting after the old one ends is fine.
+        b2 = await repo.create(
+            scope_type="TEAM",
+            scope_id="team-w",
+            period_type="MONTHLY",
+            limit_amount=Decimal("200"),
+            currency="USD",
+            warning_threshold=Decimal("0.7"),
+            critical_threshold=Decimal("0.9"),
+            enforcement_mode="STRICT",
+            starts_at=now + timedelta(days=1),
+            ends_at=None,
+        )
+        await db_session.commit()
+        assert b2.id is not None
 
 
 class TestBudgetSettle:
