@@ -9,8 +9,6 @@ from __future__ import annotations
 import pytest
 
 from app.api.auth import DEV_BYPASS_KEY, _extract_key, get_api_key, require_admin
-from app.core.config import get_settings
-from app.api.auth import _extract_key, require_admin
 from app.core.config import get_settings, sha256_hex
 from app.core.exceptions import AuthorizationError
 
@@ -77,6 +75,10 @@ def test_auth_disabled_bypasses_validation(monkeypatch):
     try:
         assert get_api_key(x_api_key=None, authorization=None) == DEV_BYPASS_KEY
         assert require_admin(DEV_BYPASS_KEY) == DEV_BYPASS_KEY
+    finally:
+        get_settings.cache_clear()
+
+
 def test_hashed_keys_match_and_reject(monkeypatch):
     """APP_AUTH_HASH_KEYS=true compares sha256 digests, not plaintext."""
     user_digest = sha256_hex("user-1")
@@ -97,6 +99,20 @@ def test_hashed_keys_match_and_reject(monkeypatch):
         get_settings.cache_clear()
 
 
+def test_plaintext_compare_uses_constant_time(monkeypatch):
+    """Even without hashing, comparison goes through hmac.compare_digest."""
+    monkeypatch.setenv("APP_API_KEYS", "user-1")
+    monkeypatch.setenv("APP_ADMIN_API_KEYS", "admin-1")
+    monkeypatch.setenv("APP_AUTH_HASH_KEYS", "false")
+    get_settings.cache_clear()
+    try:
+        s = get_settings()
+        assert s.is_valid_key("user-1")
+        assert not s.is_valid_key("user-2")
+    finally:
+        get_settings.cache_clear()
+
+
 def test_auth_enabled_still_rejects_missing_key(monkeypatch):
     """Without APP_AUTH_DISABLED, no header still means 401."""
     monkeypatch.setenv("APP_AUTH_DISABLED", "false")
@@ -108,15 +124,5 @@ def test_auth_enabled_still_rejects_missing_key(monkeypatch):
 
         with pytest.raises(AuthenticationError):
             get_api_key(x_api_key=None, authorization=None)  # no headers at all
-def test_plaintext_compare_uses_constant_time(monkeypatch):
-    """Even without hashing, comparison goes through hmac.compare_digest."""
-    monkeypatch.setenv("APP_API_KEYS", "user-1")
-    monkeypatch.setenv("APP_ADMIN_API_KEYS", "admin-1")
-    monkeypatch.setenv("APP_AUTH_HASH_KEYS", "false")
-    get_settings.cache_clear()
-    try:
-        s = get_settings()
-        assert s.is_valid_key("user-1")
-        assert not s.is_valid_key("user-2")
     finally:
         get_settings.cache_clear()
