@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 
@@ -29,7 +29,7 @@ RESERVATION_TTL_MINUTES = 15
 
 
 def _stale_cutoff() -> datetime:
-    return datetime.now(timezone.utc) - timedelta(minutes=RESERVATION_TTL_MINUTES)
+    return datetime.now(UTC) - timedelta(minutes=RESERVATION_TTL_MINUTES)
 
 
 async def find_stale(session) -> list[tuple[BudgetConsumption, Budget]]:

@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator
 
 from app.utils.money import Decimal, is_valid_amount, isfinite
 
 
-def _validate_money(value) -> Decimal:
+def _validate_money(value: Any) -> Decimal:
     d = Decimal(str(value))
     if not is_valid_amount(d):
         raise ValueError("amount must be a non-negative decimal")
     return d
 
 
-def _validate_signed(value) -> Decimal:
+def _validate_signed(value: Any) -> Decimal:
     d = Decimal(str(value))
     if not isfinite(float(d)):
         raise ValueError("amount must be a finite decimal")
@@ -41,7 +41,7 @@ SignedMoney = Annotated[
 ]
 
 
-def decimals_field(**kwargs):
+def decimals_field(**kwargs: Any) -> Any:
     return Field(default=Decimal("0"), **kwargs)
 
 

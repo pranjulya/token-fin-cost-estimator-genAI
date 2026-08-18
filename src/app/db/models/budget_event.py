@@ -5,7 +5,7 @@ Alerts (PRD Phase 13) read this later; this branch only records the events.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -16,7 +16,7 @@ from app.db.base import Base, PKMixin
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class BudgetEvent(Base, PKMixin):

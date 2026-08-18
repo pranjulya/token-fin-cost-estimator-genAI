@@ -9,7 +9,7 @@ domain policy; it does NOT hard-fail — callers enforce per enforcement_mode.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.db.models import Budget
@@ -20,7 +20,7 @@ from app.services.alert_service import AlertService
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def period_key_for(period_type: str, when: datetime | None = None) -> str:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.core.logging import get_logger
 
 logger = get_logger("app.audit")
 
 
-def audit(event: str, *, actor: str, request_id: str | None = None, **fields) -> None:
+def audit(event: str, *, actor: str, request_id: str | None = None, **fields: Any) -> None:
     """Emit a structured audit event. The actor is a key prefix/hash, never raw."""
     logger.info(event, actor=actor, request_id=request_id, **fields)
 

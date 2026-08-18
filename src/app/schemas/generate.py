@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.config import get_settings
 from app.schemas.common import APIModel, Money, SignedMoney
 from app.schemas.cost import BudgetEnvelope
+
+if TYPE_CHECKING:
+    from app.services.generation_service import GenerationResult
 
 
 class GenerateRequest(BaseModel):
@@ -24,7 +28,7 @@ class GenerateRequest(BaseModel):
     correlation_id: str | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
-    def _limits(self) -> "GenerateRequest":
+    def _limits(self) -> GenerateRequest:
         s = get_settings()
         if len(self.input) > s.max_prompt_chars:
             raise ValueError("input exceeds max_prompt_chars")
@@ -56,7 +60,7 @@ class GenerateResponse(APIModel):
     status: str
 
     @classmethod
-    def from_result(cls, result) -> "GenerateResponse":
+    def from_result(cls, result: GenerationResult) -> GenerateResponse:
         est = result.estimation
         b = est.breakdown
         u = result.usage
@@ -71,6 +75,10 @@ class GenerateResponse(APIModel):
                 remaining_after_estimate=max(decision.remaining_after, Decimal("0")),
             )
         )
+        # On the generate path actual_cost and pricing_version are always set
+        # (record_new computes them); narrow the nullable ORM types.
+        assert u.actual_cost is not None  # noqa: S101 - type guard
+        assert u.pricing_version is not None  # noqa: S101 - type guard
         return cls(
             request_id=result.request_id,
             provider=result.provider,
