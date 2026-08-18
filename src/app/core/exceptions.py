@@ -122,6 +122,16 @@ class RateLimitError(AppError):
     code = ErrorCode.RATE_LIMITED
     status_code = 429
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        request_id: str | None = None,
+        retry_after_seconds: int | None = None,
+    ):
+        super().__init__(message, request_id=request_id)
+        self.retry_after_seconds = retry_after_seconds
+
 
 class ReconciliationError(AppError):
     code = ErrorCode.USAGE_RECONCILIATION_FAILED
