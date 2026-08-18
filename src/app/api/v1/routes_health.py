@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.core.version import get_build_sha, get_version
 from app.db.session import async_engine
 
 router = APIRouter(tags=["health"])
@@ -13,7 +14,11 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "version": get_version(),
+        "build": get_build_sha(),
+    }
 
 
 @router.get("/ready")

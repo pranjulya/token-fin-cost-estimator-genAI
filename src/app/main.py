@@ -11,7 +11,9 @@ from app.api.middleware import ObservabilityMiddleware
 from app.api.v1.router import api_router, health_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.version import get_version
 from app.db import models  # noqa: F401  (register tables/metadata)
+from app.db.session import async_engine
 
 
 @asynccontextmanager
@@ -21,6 +23,8 @@ async def lifespan(app: FastAPI):
     logger.info("starting", app=get_settings().app_name, env=get_settings().environment)
     yield
     logger.info("shutdown")
+    # Release the connection pool so the process exits cleanly.
+    await async_engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -43,7 +47,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
+        version=get_version(),
         lifespan=lifespan,
         docs_url=None if prod else "/docs",
         redoc_url=None if prod else "/redoc",
