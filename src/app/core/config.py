@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Docker entrypoint seeds idempotent pricing on boot only when true.
-    seed_on_boot: bool = False
+    seed_pricing: bool = False
 
     database_url: str = Field(default="postgresql+psycopg://localhost:5432/token_cost_estimator")
 
