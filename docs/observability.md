@@ -41,6 +41,11 @@ Key events:
 No high-cardinality labels (raw `user_id` is deliberately excluded). Disable
 with `APP_METRICS_ENABLED=false`.
 
+**Scrape access:** `/metrics` is open by default — fine behind a private scrape
+network (Prometheus/grafana agent). To require a token on a shared network, set
+`APP_METRICS_SCRAPE_TOKEN` and configure the scraper with
+`Authorization: Bearer <token>` (rejected without it → `401`).
+
 ## Tracing (span events)
 
 The PRD trace chain is approximated with lightweight span events (no OTel):

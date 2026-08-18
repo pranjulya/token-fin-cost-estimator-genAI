@@ -1,0 +1,12 @@
+# Keep GitHub Actions and the Python (uv lock) deps up to date.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "pip" # reads pyproject.toml + uv.lock
+    directory: "/"
+    schedule:
+      interval: "weekly"

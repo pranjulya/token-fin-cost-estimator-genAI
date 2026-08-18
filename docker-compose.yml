@@ -34,6 +34,8 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
+      # python is on PATH via /app/.venv/bin (set in the Dockerfile), so this
+      # resolves without relying on curl/wget (not present in the slim image).
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
