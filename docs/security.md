@@ -10,6 +10,16 @@
 - Keys configured via environment: `APP_API_KEYS` (comma-separated user keys),
   `APP_ADMIN_API_KEYS` (comma-separated admin keys).
 
+### Hashed keys at rest
+
+By default keys are plaintext env strings. For production, set
+`APP_AUTH_HASH_KEYS=true` and put **sha256 hex digests** in `APP_API_KEYS` /
+`APP_ADMIN_API_KEYS` (generate with
+`uv run python scripts/hash_api_keys.py <key>`). Runtime compares hashes with
+`hmac.compare_digest` — constant-time, no plaintext at rest. Rotate by
+regenerating hashes in the secret manager / env; this is a one-way hash so
+leaked config cannot reveal usable keys.
+
 ### Authorization (admin scope)
 
 Admin keys are a superset of user keys (an admin key can call any route).
