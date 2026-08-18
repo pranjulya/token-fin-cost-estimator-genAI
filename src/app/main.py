@@ -35,6 +35,11 @@ def create_app() -> FastAPI:
                 "APP_API_KEYS and APP_ADMIN_API_KEYS are required when "
                 f"APP_ENVIRONMENT='{settings.environment}' (not 'development')."
             )
+        if settings.auth_disabled:
+            raise RuntimeError(
+                "APP_AUTH_DISABLED is not allowed when "
+                f"APP_ENVIRONMENT='{settings.environment}' (not 'development')."
+            )
 
     app = FastAPI(
         title=settings.app_name,

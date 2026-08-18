@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     # Docker entrypoint seeds idempotent pricing on boot only when true.
     seed_pricing: bool = False
 
-    database_url: str = Field(default="postgresql+psycopg://localhost:5432/token_cost_estimator")
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost:5432/token_cost_estimator"
+    )
 
     # Estimate guardrails
     max_prompt_chars: int = 200_000
@@ -69,6 +71,10 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 60
     rate_limit_generate_per_minute: int = 10
 
+    # DEV-ONLY: bypass API-key auth entirely (returns a synthetic key). The
+    # boot guard refuses this in non-development environments, so it can never
+    # disable auth in prod.
+    auth_disabled: bool = False
     # When true, APP_API_KEYS / APP_ADMIN_API_KEYS are treated as pre-hashed
     # sha256 hex digests (see scripts/hash_api_keys.py) and incoming keys are
     # compared via hmac.compare_digest. Keys are never stored in plaintext.
