@@ -125,6 +125,7 @@ class TestRateLimitAPI:
             assert second.status_code == 200
             assert third.status_code == 429
             assert third.json()["error"]["code"] == "RATE_LIMITED"
+            assert third.headers.get("Retry-After") is not None
         finally:
             os.environ.pop("APP_RATE_LIMIT_GENERATE_PER_MINUTE", None)
             get_settings.cache_clear()

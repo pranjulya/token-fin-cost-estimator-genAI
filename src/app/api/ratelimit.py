@@ -19,6 +19,9 @@ from app.core.exceptions import RateLimitError
 # Lazy-eviction guard: drop buckets untouched for this long.
 _STALE_AFTER_SECONDS = 300.0
 
+# Evict on roughly every Nth call (cheap amortized sweep instead of a timer).
+_EVICT_EVERY = 100
+
 
 @dataclass
 class _Bucket:
@@ -36,6 +39,7 @@ class RateLimiter:
         }
         self._buckets: dict[tuple[str, str], _Bucket] = {}
         self._now = time.monotonic
+        self._call_count = 0
 
     def _capacity(self, route: str) -> float:
         return self._limits.get(route, self._limits["default"])
@@ -46,6 +50,12 @@ class RateLimiter:
         if elapsed > 0:
             b.tokens = min(capacity, b.tokens + elapsed * (capacity / 60.0))
             b.updated_at = now
+
+    def _evict_stale(self) -> None:
+        now = self._now()
+        stale = [k for k, b in self._buckets.items() if now - b.updated_at > _STALE_AFTER_SECONDS]
+        for k in stale:
+            del self._buckets[k]
 
     def allow(self, *, key: str, route: str = "default") -> bool:
         """Consume one token for (key, route); True if within limit."""
@@ -62,11 +72,14 @@ class RateLimiter:
             return True
         return False
 
-    def _evict_stale(self) -> None:
-        now = self._now()
-        stale = [k for k, b in self._buckets.items() if now - b.updated_at > _STALE_AFTER_SECONDS]
-        for k in stale:
-            del self._buckets[k]
+    def retry_after(self, key: str, route: str = "default") -> int:
+        """Seconds until the bucket refills a token (for Retry-After)."""
+        capacity = self._capacity(route)
+        b = self._buckets.get((key, route))
+        if b is None:
+            return 0
+        # A token refills every 60/capacity seconds.
+        return max(1, int(60.0 / capacity))
 
 
 @lru_cache
@@ -83,10 +96,18 @@ def rate_limit_dep(route: str = "default"):
 
     Usage: ``Depends(rate_limit_dep("generate"))`` — the returned dependency
     also depends on ``get_api_key`` so it runs after auth and has the key.
+
+    Amortized eviction: sweep stale buckets every Nth call so the map never
+    grows unboundedly.
     """
 
     def _dependency(key: str = Depends(get_api_key)) -> None:
-        if not _limiter().allow(key=key, route=route):
-            raise RateLimitError("Rate limit exceeded.")
+        limiter = _limiter()
+        limiter._call_count += 1
+        if limiter._call_count % _EVICT_EVERY == 0:
+            limiter._evict_stale()
+        if not limiter.allow(key=key, route=route):
+            retry_after = limiter.retry_after(key=key, route=route)
+            raise RateLimitError("Rate limit exceeded.", retry_after_seconds=retry_after)
 
     return _dependency

@@ -31,8 +31,10 @@ anomaly alerts — with Decimal-safe money math and frozen pricing history.
 docker compose up --build
 ```
 
-- `app` runs migrations + seeds pricing (idempotent) on boot, then uvicorn on
-  `:8000`.
+- `app` runs migrations on boot, then uvicorn on `:8000`. It seeds pricing
+  (idempotent) only when `APP_SEED_PRICING=true` (the compose dev default).
+- In production, prefer running `alembic upgrade head` as a one-shot migrate
+  job and leave `APP_SEED_PRICING=false` (seed explicitly).
 - `db` is PostgreSQL 14 with a health check; the app waits for it.
 - `/health`, `/ready`, `/metrics` are open; `/v1/*` requires `X-API-Key`.
   Compose defaults: user key `dev-user-key`, admin key `dev-admin-key`.

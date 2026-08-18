@@ -1,0 +1,28 @@
+# Production overlay — layered on docker-compose.yml.
+#
+# Usage:
+#   POSTGRES_PASSWORD=... APP_API_KEYS=... APP_ADMIN_API_KEYS=... \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this changes vs dev:
+#   - No published DB port (db is only reachable inside the compose network)
+#   - DB password + API keys come from the environment (compose fails fast if
+#     any is unset — no dev defaults in prod)
+#   - APP_ENVIRONMENT=production → boot guard requires keys, docs/OpenAPI off
+#   - APP_SEED_PRICING=false (seed explicitly, never on boot)
+
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports: !reset []
+
+  app:
+    environment:
+      APP_DATABASE_URL: postgresql+psycopg://token_cost_estimator:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/token_cost_estimator
+      APP_ENVIRONMENT: production
+      APP_SEED_PRICING: "false"
+      APP_API_KEYS: ${APP_API_KEYS:?APP_API_KEYS is required}
+      APP_ADMIN_API_KEYS: ${APP_ADMIN_API_KEYS:?APP_ADMIN_API_KEYS is required}
+      APP_OPENAI_API_KEY: ${APP_OPENAI_API_KEY:-}
+      APP_GENERATE_ENABLED: ${APP_GENERATE_ENABLED:-false}
