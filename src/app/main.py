@@ -13,6 +13,7 @@ from app.api.middleware import ObservabilityMiddleware
 from app.api.v1.router import api_router, health_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.version import get_version
 from app.db import models  # noqa: F401  (register tables/metadata)
 from app.db.session import async_engine
 
@@ -26,14 +27,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("shutdown")
     # Release the connection pool so the process exits cleanly.
     await async_engine.dispose()
-    # Close the pooled LLM httpx client if one was created.
-    try:
-        from app.providers.llm import _cached_provider
-
-        provider = _cached_provider("openai")
-        await provider.aclose()
-    except Exception:  # noqa: S110 - shutdown must not raise
-        logger.warning("llm_client_close_failed")
 
 
 def create_app() -> FastAPI:
@@ -56,7 +49,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
+        version=get_version(),
         lifespan=lifespan,
         docs_url=None if prod else "/docs",
         redoc_url=None if prod else "/redoc",
