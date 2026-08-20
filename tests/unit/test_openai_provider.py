@@ -50,22 +50,27 @@ def _resp_json(*, usage=None, text="hello", model="gpt-4o"):
 
 
 @pytest.fixture
-def provider():
-    return OpenAIProvider(api_key="sk-test", base_url=None, timeout_seconds=5)
-
-
-@pytest.fixture
 def mock_client():
     client = AsyncMock()
     resp = MagicMock()
     resp.status_code = 200
     resp.json.return_value = _resp_json(usage=_json_usage(prompt=12, completion=4, cached=3))
     client.post.return_value = resp
-    cm = AsyncMock()
-    cm.__aenter__.return_value = client
-    cm.__aexit__.return_value = False
-    with patch("app.providers.llm.openai_provider.httpx.AsyncClient", return_value=cm) as ctor:
-        yield client, cm, ctor
+    with patch("app.providers.llm.openai_provider.httpx.AsyncClient", return_value=client) as ctor:
+        yield client, ctor
+
+
+@pytest.fixture
+def provider(mock_client):
+    # Build the provider with the mocked client injected eagerly (the client is
+    # constructed in __init__ now), so complete() never touches the wire.
+    client, _ = mock_client
+    return OpenAIProvider(
+        api_key="sk-test",
+        base_url=None,
+        timeout_seconds=5,
+        client_factory=lambda: client,
+    )
 
 
 def _set_json(client, payload):
@@ -74,7 +79,7 @@ def _set_json(client, payload):
 
 
 async def test_maps_usage_and_cached(provider, mock_client):
-    client, cm, ctor = mock_client
+    client, _ = mock_client
     out = await provider.complete(
         model="gpt-4o", prompt="hi", max_output_tokens=20, request_id="req_1"
     )
@@ -83,19 +88,16 @@ async def test_maps_usage_and_cached(provider, mock_client):
     assert out.cached_prompt_tokens == 3
     assert out.text == "hello"
     assert out.provider == "openai"
-    ctor.assert_called_once()
     client.post.assert_awaited_once()
     url, kwargs = client.post.await_args.args[0], client.post.await_args.kwargs
     assert url.endswith("/chat/completions")
     assert kwargs["headers"]["Authorization"] == "Bearer sk-test"
     assert kwargs["json"]["max_tokens"] == 20
     assert kwargs["json"]["messages"] == [{"role": "user", "content": "hi"}]
-    cm.__aenter__.assert_awaited()
-    cm.__aexit__.assert_awaited()
 
 
 async def test_missing_details_cached_zero(provider, mock_client):
-    client, _, _ = mock_client
+    client, _ = mock_client
     _set_json(client, _resp_json(usage=_json_usage(prompt=12, completion=4)))
     out = await provider.complete(
         model="gpt-4o", prompt="hi", max_output_tokens=1, request_id="req_1"
@@ -104,7 +106,7 @@ async def test_missing_details_cached_zero(provider, mock_client):
 
 
 async def test_missing_usage_is_provider_error(provider, mock_client):
-    client, _, _ = mock_client
+    client, _ = mock_client
     _set_json(client, _resp_json(usage=None))
     with pytest.raises(ProviderError) as ei:
         await provider.complete(
@@ -115,7 +117,7 @@ async def test_missing_usage_is_provider_error(provider, mock_client):
 
 
 async def test_non_2xx_is_provider_error(provider, mock_client):
-    client, _, _ = mock_client
+    client, _ = mock_client
     resp = AsyncMock()
     resp.status_code = 401
     resp.text = "unauthorized"
@@ -130,7 +132,7 @@ async def test_non_2xx_is_provider_error(provider, mock_client):
 
 
 async def test_timeout_is_provider_error(provider, mock_client):
-    client, _, _ = mock_client
+    client, _ = mock_client
     client.post.side_effect = TimeoutError("connect timed out")
     with pytest.raises(ProviderError) as ei:
         await provider.complete(
@@ -139,17 +141,19 @@ async def test_timeout_is_provider_error(provider, mock_client):
     assert ei.value.status_code == 502
 
 
-async def test_missing_api_key_does_not_construct_client():
-    p = OpenAIProvider(api_key=None, base_url=None, timeout_seconds=5)
+async def test_missing_api_key_fails_before_network_call():
     with patch("app.providers.llm.openai_provider.httpx.AsyncClient") as ctor:
+        p = OpenAIProvider(api_key=None, base_url=None, timeout_seconds=5)
+        ctor.assert_called_once()  # client built eagerly in __init__
+        client = ctor.return_value
         with pytest.raises(ProviderError) as ei:
             await p.complete(model="gpt-4o", prompt="hi", max_output_tokens=1, request_id="req_1")
-    ctor.assert_not_called()
+    client.post.assert_not_called()  # never used without a key
     assert "APP_OPENAI_API_KEY" in ei.value.message
 
 
 async def test_prompt_not_in_error_message(provider, mock_client):
-    client, _, _ = mock_client
+    client, _ = mock_client
     client.post.side_effect = RuntimeError("boom")
     with pytest.raises(ProviderError) as ei:
         await provider.complete(
@@ -159,6 +163,22 @@ async def test_prompt_not_in_error_message(provider, mock_client):
             request_id="req_1",
         )
     assert "super-secret-prompt" not in ei.value.message
+
+
+async def test_client_is_pooled_across_complete_calls(provider, mock_client):
+    """The same client instance is reused — no per-request construction."""
+    client, _ = mock_client
+    await provider.complete(model="gpt-4o", prompt="a", max_output_tokens=1, request_id="r1")
+    await provider.complete(model="gpt-4o", prompt="b", max_output_tokens=1, request_id="r2")
+    assert client.post.await_count == 2
+    # The provider holds exactly one client (created in __init__).
+    assert provider._client is client
+
+
+async def test_aclose_closes_pooled_client(provider, mock_client):
+    client, _ = mock_client
+    await provider.aclose()
+    client.aclose.assert_awaited_once()
 
 
 def test_factory_unknown_provider():
