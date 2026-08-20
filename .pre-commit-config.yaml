@@ -1,0 +1,38 @@
+# Pre-commit hooks — fast local checks mirroring the CI pipeline.
+# Install:  pre-commit install
+# Skip a run:  git commit --no-verify
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.1
+    hooks:
+      - id: mypy
+        args: [src]
+        pass_filenames: false
+        additional_dependencies:
+          - pydantic>=2.7
+          - pydantic-settings>=2.3
+          - sqlalchemy>=2.0
+          - structlog>=24.1
+          - fastapi>=0.115
+          - httpx>=0.27
+          - prometheus-client>=0.20
+          - tiktoken>=0.7
+          - greenlet>=3.1
+          - alembic>=1.13
+          - psycopg[binary]>=3.1
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
