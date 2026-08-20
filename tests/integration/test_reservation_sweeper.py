@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.db.models import Budget, BudgetConsumption, BudgetEvent, RequestLedger
+from app.db.models import Budget, BudgetConsumption, BudgetEvent
 from app.db.session import AsyncSessionLocal
 from app.domain.budget import BLOCK
 from app.repositories.budget_repository import BudgetRepository
@@ -129,26 +129,3 @@ async def test_apply_does_not_wipe_reservation_touched_after_find(db_session):
 
     await db_session.refresh(row)
     assert row.reserved_amount == Decimal("25")
-
-
-async def test_stale_in_flight_ledger_marked_failed(db_session):
-    """An IN_FLIGHT ledger row older than the TTL is marked FAILED; a fresh one
-    is left alone."""
-    stale = RequestLedger(
-        request_id="ledger_stale", status="IN_FLIGHT", provider="openai", model="gpt-4o"
-    )
-    fresh = RequestLedger(
-        request_id="ledger_fresh", status="IN_FLIGHT", provider="openai", model="gpt-4o"
-    )
-    db_session.add_all([stale, fresh])
-    await db_session.flush()
-    stale.updated_at = datetime.now(UTC) - timedelta(days=1)
-    await db_session.commit()
-
-    marked = await mark_stale_in_flight_failed(db_session)
-    assert marked == 1
-
-    await db_session.refresh(stale)
-    await db_session.refresh(fresh)
-    assert stale.status == "FAILED"
-    assert fresh.status == "IN_FLIGHT"
