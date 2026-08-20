@@ -1,5 +1,5 @@
 # Makefile — dev workflow for the GenAI token cost estimator
-.PHONY: help setup test test-unit test-integration test-db seed run migrate lint format typecheck coverage security-check demo
+.PHONY: help setup test test-unit test-integration test-db seed run migrate lint format typecheck coverage security-check demo precommit
 
 PY := uv run python
 
@@ -50,6 +50,9 @@ typecheck:  ## Run mypy on src/
 
 coverage: test-db  ## Run tests with the coverage gate (>=80% on src/app)
 	uv run pytest -p no:cacheprovider --cov=src/app --cov-report=term-missing --cov-fail-under=80
+
+precommit:  ## Install pre-commit hooks (ruff + mypy + hygiene)
+	uv run pre-commit install
 
 security-check:  ## Dependency audit + committed-secret grep
 	bash scripts/security_scan.sh
