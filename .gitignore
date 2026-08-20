@@ -6,6 +6,8 @@ __pycache__/
 .pytest_cache/
 build/
 dist/
+.coverage
+htmlcov/
 
 # Env / secrets
 .env
@@ -21,3 +23,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Study notes (keep the repo product-only; PDFs are local artifacts)
+Learning/*.pdf
