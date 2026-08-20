@@ -1,0 +1,8 @@
+# Default code owners for the repository.
+# Format: glob pattern, @owner (or GitHub team). Routes review requests to the
+# listed owners when a PR touches matching files.
+
+* @pranjulya
+
+# CI + security config is high-signal — keep a named owner.
+.github/ @pranjulya

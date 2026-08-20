@@ -23,6 +23,7 @@ anomaly alerts — with Decimal-safe money math and frozen pricing history.
 | [testing](docs/testing.md) | test layers, the concurrency proof, CI pipeline |
 | [production-scenarios](docs/production-scenarios.md) | PRD §37 failure/distributed cases |
 | [demo](docs/demo.md) | `make demo` — the team-budget-$10 portfolio walkthrough |
+| [roadmap](docs/roadmap.md) | next-quarter items (Redis rate limit, OTel, IdP, k8s, …) |
 | [Learning](Learning/) | learning path + interview Q&A |
 
 ## Docker (Phase 19)

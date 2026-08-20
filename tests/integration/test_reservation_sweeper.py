@@ -17,7 +17,7 @@ from app.db.session import AsyncSessionLocal
 from app.domain.budget import BLOCK
 from app.repositories.budget_repository import BudgetRepository
 from app.services.budget_service import BudgetService, period_key_for
-from scripts.expire_reservations import find_stale, release_stale
+from scripts.expire_reservations import find_stale, mark_stale_in_flight_failed, release_stale
 
 
 async def _make_budget_and_reserve(

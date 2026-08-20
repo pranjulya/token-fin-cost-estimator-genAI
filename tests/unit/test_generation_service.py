@@ -84,6 +84,12 @@ def _svc(*, enabled=True, existing=None, budget="yes", decision=None, fake=None,
         record_new=AsyncMock(side_effect=record_error or (lambda **k: _Usage(Decimal("1.00"))))
     )
     usage_repo = SimpleNamespace(get_by_request_id=AsyncMock(return_value=existing))
+    ledger_repo = SimpleNamespace(
+        get=AsyncMock(return_value=None),
+        create_in_flight=AsyncMock(),
+        mark_completed=AsyncMock(),
+        mark_failed=AsyncMock(),
+    )
     commits: list[int] = []
 
     async def _commit():
@@ -94,6 +100,7 @@ def _svc(*, enabled=True, existing=None, budget="yes", decision=None, fake=None,
         budget_service=budget_svc,
         usage_service=usage_svc,
         usage_repository=usage_repo,
+        request_ledger_repository=ledger_repo,
         get_llm=lambda name: fake,
         session_commit=_commit,
         generate_enabled=enabled,
