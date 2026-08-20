@@ -32,3 +32,7 @@ class LLMProvider(Protocol):
         max_output_tokens: int,
         request_id: str,
     ) -> LLMCompletion: ...
+
+    async def aclose(self) -> None:
+        """Release provider-held resources (e.g. a pooled HTTP client)."""
+        ...

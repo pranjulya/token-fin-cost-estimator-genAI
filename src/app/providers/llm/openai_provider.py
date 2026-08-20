@@ -4,6 +4,11 @@ Deliberately does NOT use the ``openai`` SDK: v1 keeps the provider dependency
 to a single HTTP client. If the deployed service later needs SDK features, swap
 the body of ``complete()`` to the official SDK — the ``LLMProvider`` Protocol,
 factory, and all callers stay unchanged.
+
+The httpx client is created once per provider (pooled) and reused across
+requests — no per-request client churn. ``get_llm_provider`` caches the
+provider, so in practice one client lives for the process lifetime and is
+closed via ``aclose()`` on shutdown.
 """
 
 from __future__ import annotations
@@ -42,7 +47,13 @@ class OpenAIProvider:
         self._api_key = api_key
         self._base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
         self._timeout_seconds = timeout_seconds
-        self._client_factory = client_factory or _default_client_factory(timeout_seconds)
+        factory = client_factory or _default_client_factory(timeout_seconds)
+        # One pooled client for the lifetime of the provider.
+        self._client = factory()
+
+    async def aclose(self) -> None:
+        """Close the pooled httpx client (called on app shutdown)."""
+        await self._client.aclose()
 
     async def complete(
         self,
@@ -70,8 +81,7 @@ class OpenAIProvider:
         }
 
         try:
-            async with self._client_factory() as client:
-                resp = await client.post(url, headers=headers, json=payload)
+            resp = await self._client.post(url, headers=headers, json=payload)
         except Exception as exc:
             # Never include prompt text in the error message (K12).
             raise ProviderError(f"OpenAI request failed: {exc}", request_id=request_id) from exc
