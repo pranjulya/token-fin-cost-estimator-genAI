@@ -8,13 +8,14 @@ from app.api.auth import require_admin
 from app.api.dependencies import budget_repo_dep
 from app.core.audit import audit, key_actor
 from app.core.exceptions import InvalidRequestError
+from app.db.models import Budget
 from app.repositories.budget_repository import BudgetRepository
 from app.schemas.budget import BudgetCreate, BudgetOut, BudgetUpdate
 
 router = APIRouter(prefix="/budgets", tags=["budget"])
 
 
-async def _get_or_404(repo: BudgetRepository, budget_id: int):
+async def _get_or_404(repo: BudgetRepository, budget_id: int) -> Budget:
     budget = await repo.get(budget_id)
     if budget is None:
         raise HTTPException(status_code=404, detail="budget not found")

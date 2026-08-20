@@ -57,6 +57,9 @@ jobs:
       - name: Integration + contract tests
         run: uv run pytest tests/integration tests/contract -p no:cacheprovider
 
+      - name: Coverage gate (>=80% on src/app)
+        run: uv run pytest -p no:cacheprovider --cov=src/app --cov-fail-under=80 --cov-report=term
+
       - name: Security scan (pip-audit)
         run: uvx pip-audit
 

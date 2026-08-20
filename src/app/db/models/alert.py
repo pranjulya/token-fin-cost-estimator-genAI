@@ -6,7 +6,7 @@ signal for budget threshold crossings and cost anomalies.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, Index, String
@@ -16,7 +16,7 @@ from app.db.base import Base, PKMixin
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Alert(Base, PKMixin):

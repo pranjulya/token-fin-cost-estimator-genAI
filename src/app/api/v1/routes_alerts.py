@@ -8,13 +8,14 @@ from app.api.auth import require_admin
 from app.api.dependencies import alert_service_dep
 from app.core.audit import audit, key_actor
 from app.core.exceptions import InvalidRequestError
+from app.db.models import Alert
 from app.schemas.alerts import ALERT_TYPES, SEVERITIES, AlertOut
 from app.services.alert_service import AlertService
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
-async def _get_or_404(service: AlertService, alert_id: int):
+async def _get_or_404(service: AlertService, alert_id: int) -> Alert:
     alert = await service.get(alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="alert not found")

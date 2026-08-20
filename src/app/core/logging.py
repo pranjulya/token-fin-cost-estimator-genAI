@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import logging.config
 import sys
+from typing import Any, cast
 
 import structlog
 
@@ -20,7 +21,7 @@ from app.core.config import get_settings
 _SECRET_KEY_MARKERS = ("api_key", "apikey", "token", "secret", "password", "authorization")
 
 
-def redact_processor(_logger, _method, event_dict):
+def redact_processor(_logger: Any, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     """Replace values of secret-shaped keys with [REDACTED]."""
     for key in list(event_dict):
         lowered = key.lower()
@@ -29,7 +30,7 @@ def redact_processor(_logger, _method, event_dict):
     return event_dict
 
 
-def _shared_processors() -> list:
+def _shared_processors() -> list[Any]:
     timestamper = structlog.processors.TimeStamper(fmt="iso")
     return [
         structlog.contextvars.merge_contextvars,
@@ -84,7 +85,7 @@ def configure_logging() -> None:
             "uvicorn": {"handlers": ["default"], "level": "WARNING"},
         },
     }
-    logging.config.dictConfig(log_config)  # type: ignore[attr-defined]
+    logging.config.dictConfig(log_config)
     structlog.configure(
         processors=_shared_processors() + [structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -94,4 +95,6 @@ def configure_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name or "app")
+    # structlog returns a BoundLogger once configured; cast for mypy (the
+    # return type of get_logger is loosely typed upstream).
+    return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name or "app"))

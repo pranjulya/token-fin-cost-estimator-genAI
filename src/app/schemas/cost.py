@@ -18,7 +18,7 @@ class EstimateRequest(BaseModel):
     endpoint: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
-    def _limits(self) -> "EstimateRequest":
+    def _limits(self) -> EstimateRequest:
         s = get_settings()
         if len(self.input) > s.max_prompt_chars:
             raise ValueError("input exceeds max_prompt_chars")

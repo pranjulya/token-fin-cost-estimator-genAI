@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,9 +16,11 @@ class UsageRepository:
         self._session = session
 
     async def get_by_request_id(self, request_id: str) -> UsageRecord | None:
-        return await self._session.scalar(
+        result = await self._session.scalar(
             select(UsageRecord).where(UsageRecord.request_id == request_id)
         )
+        assert result is None or isinstance(result, UsageRecord)  # noqa: S101 - type guard
+        return result
 
     async def add(self, record: UsageRecord) -> UsageRecord:
         self._session.add(record)
@@ -90,9 +93,9 @@ class UsageRepository:
         )
         return list((await self._session.scalars(stmt)).all())
 
-    async def summary(self) -> dict:
+    async def summary(self) -> dict[str, Any]:
         """Totals over all recorded usage."""
-        filters = [UsageRecord.actual_cost.is_not(None)]  # type: ignore[attr-defined]
+        filters = [UsageRecord.actual_cost.is_not(None)]
         rows = (
             await self._session.execute(
                 select(
@@ -112,14 +115,14 @@ class UsageRepository:
             "total_cost": rows.total_cost,
         }
 
-    async def cost_by(self, dimension: str) -> list[dict]:
+    async def cost_by(self, dimension: str) -> list[dict[str, Any]]:
         """Group total actual cost by one attribution dimension."""
         col = getattr(UsageRecord, dimension, None)
         if col is None:
             raise ValueError(f"unsupported aggregation dimension: {dimension}")
         stmt = (
             select(col, func.sum(UsageRecord.actual_cost).label("cost"), func.count().label("n"))
-            .where(UsageRecord.actual_cost.is_not(None))  # type: ignore[attr-defined]
+            .where(UsageRecord.actual_cost.is_not(None))
             .group_by(col)
             .order_by(func.sum(UsageRecord.actual_cost).desc())
         )

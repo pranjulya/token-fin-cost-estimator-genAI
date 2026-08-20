@@ -7,6 +7,7 @@ Used to protect the money paths: /v1/generate (tight), /v1/usage + estimate.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -91,7 +92,7 @@ def _limiter() -> RateLimiter:
     )
 
 
-def rate_limit_dep(route: str = "default"):
+def rate_limit_dep(route: str = "default") -> Callable[[str], None]:
     """Build a FastAPI dependency that rate-limits the resolved API key.
 
     Usage: ``Depends(rate_limit_dep("generate"))`` — the returned dependency

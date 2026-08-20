@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -15,7 +15,7 @@ from app.db.models import Budget, BudgetConsumption, BudgetEvent
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class BudgetRepository:
@@ -93,7 +93,9 @@ class BudgetRepository:
             )
             .order_by(Budget.created_at.desc())
         )
-        return await self._session.scalar(stmt)
+        result = await self._session.scalar(stmt)
+        assert result is None or isinstance(result, Budget)  # noqa: S101 - type guard
+        return result
 
     async def _has_overlap(
         self,
@@ -158,7 +160,9 @@ class BudgetRepository:
             BudgetConsumption.budget_id == budget_id,
             BudgetConsumption.period_key == period_key,
         )
-        return await self._session.scalar(stmt)
+        result = await self._session.scalar(stmt)
+        assert result is None or isinstance(result, BudgetConsumption)  # noqa: S101
+        return result
 
     async def lock_consumption(self, budget_id: int, period_key: str) -> BudgetConsumption:
         """Return the consumption row for (budget, period), row-locked FOR UPDATE.
@@ -190,10 +194,13 @@ class BudgetRepository:
                 row = await self._session.scalar(
                     stmt.with_for_update()
                 )  # re-select (locked) inside savepoint
-                return row  # type: ignore[return-value]
+                assert isinstance(row, BudgetConsumption)  # noqa: S101 - type guard
+                return row
         except IntegrityError:
             # Lost the concurrent first-insert race; reload the winner's row.
-            return await self._session.scalar(stmt.with_for_update())  # type: ignore[return-value]
+            row = await self._session.scalar(stmt.with_for_update())
+            assert isinstance(row, BudgetConsumption)  # noqa: S101 - type guard
+            return row
 
     async def set_reserved(self, row: BudgetConsumption, amount: Decimal) -> None:
         row.reserved_amount = amount

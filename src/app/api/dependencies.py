@@ -115,6 +115,6 @@ def new_request_id() -> str:
     # Prefer the middleware-bound request_id so the response body agrees with
     # logs/headers; fall back to a fresh id when called outside a request.
     bound = structlog.contextvars.get_contextvars().get("request_id")
-    if bound:
+    if isinstance(bound, str) and bound:
         return bound
     return f"req_{uuid.uuid4().hex[:24]}"

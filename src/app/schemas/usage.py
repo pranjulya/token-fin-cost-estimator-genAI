@@ -32,7 +32,7 @@ class UsageCreate(BaseModel):
     status: str = Field(default="SUCCESS", max_length=32)
 
     @model_validator(mode="after")
-    def _token_limits(self) -> "UsageCreate":
+    def _token_limits(self) -> UsageCreate:
         """Block absurd token counts (Phase 17 input limits)."""
         cap = get_settings().max_expected_output_tokens
         for field in (
