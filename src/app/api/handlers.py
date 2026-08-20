@@ -66,10 +66,12 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException) -> JSONResponse:
         # Convert bare FastAPI HTTPExceptions (e.g. route-level 404s) into the
-        # PRD error envelope (Phase 18 contract).
-        code = {401: ErrorCode.UNAUTHORIZED, 403: ErrorCode.FORBIDDEN}.get(
-            exc.status_code, ErrorCode.VALIDATION_ERROR
-        )
+        # PRD error envelope (Phase 18 contract), mapping status to a real code.
+        code = {
+            401: ErrorCode.UNAUTHORIZED,
+            403: ErrorCode.FORBIDDEN,
+            404: ErrorCode.NOT_FOUND,
+        }.get(exc.status_code, ErrorCode.VALIDATION_ERROR)
         return _error_response(code, str(exc.detail), _request_id(request), exc.status_code)
 
     @app.exception_handler(SQLAlchemyError)

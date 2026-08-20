@@ -89,7 +89,9 @@ class PricingRepository:
             .order_by(ModelPricing.version.desc())
             .limit(1)
         )
-        return await self._session.scalar(stmt)
+        result = await self._session.scalar(stmt)
+        assert result is None or isinstance(result, ModelPricing)  # noqa: S101 - type guard
+        return result
 
     @staticmethod
     def _to_domain(row: ModelPricing) -> ModelPrice:

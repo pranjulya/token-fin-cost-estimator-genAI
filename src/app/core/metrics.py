@@ -11,8 +11,9 @@ No raw user_id labels (PRD §35: avoid uncontrolled high-cardinality labels).
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Any
 
 import structlog
 from prometheus_client import Counter, Histogram, generate_latest
@@ -143,7 +144,7 @@ metrics = Metrics(enabled=get_settings().metrics_enabled)
 
 
 @contextmanager
-def span(name: str, **fields) -> Iterator[None]:
+def span(name: str, **fields: Any) -> Iterator[None]:
     """Time a named span, bind it to structlog contextvars, log completion.
 
     Matches the PRD trace chain (Tokenization, Pricing Lookup, Cost Estimation,

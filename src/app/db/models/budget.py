@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import DateTime, Index, Numeric, String
@@ -12,7 +12,7 @@ from app.db.base import Base, PKMixin, TimestampMixin
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Budget(Base, PKMixin, TimestampMixin):

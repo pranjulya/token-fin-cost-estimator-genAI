@@ -67,7 +67,7 @@ class BudgetCreate(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _thresholds_ordered(self):
+    def _thresholds_ordered(self) -> BudgetCreate:
         if self.warning_threshold > self.critical_threshold:
             raise ValueError("warning_threshold must be <= critical_threshold")
         return self

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -195,7 +195,7 @@ class TestBudgetEvaluate:
         legacy data the repository must still resolve correctly.
         """
         repo = BudgetRepository(db_session)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _row(scope, *, starts_at, ends_at, limit):
             return Budget(
@@ -232,7 +232,7 @@ class TestBudgetEvaluate:
 
     async def test_get_active_returns_none_when_all_expired(self, db_session):
         repo = BudgetRepository(db_session)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db_session.add(
             Budget(
                 scope_type="TEAM",
@@ -283,7 +283,7 @@ class TestBudgetEvaluate:
     async def test_non_overlapping_windows_allowed(self, db_session):
         """Sequential windows (no overlap) are valid for the same scope."""
         repo = BudgetRepository(db_session)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await repo.create(
             scope_type="TEAM",
             scope_id="team-w",

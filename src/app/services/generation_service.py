@@ -48,7 +48,7 @@ class GenerationResult:
     model: str
     output: str
     estimation: Estimation
-    usage: "UsageRecord"
+    usage: UsageRecord
     budget_decision: BudgetDecision | None  # None -> ENABLED stub envelope
 
 
@@ -57,9 +57,9 @@ class GenerationService:
         self,
         *,
         estimator: CostEstimator,
-        budget_service: "BudgetService",
+        budget_service: BudgetService,
         usage_service: UsageService,
-        usage_repository: "UsageRepository",
+        usage_repository: UsageRepository,
         get_llm: Callable[[str], LLMProvider],
         session_commit: Callable[[], Awaitable[None]],
         generate_enabled: bool,

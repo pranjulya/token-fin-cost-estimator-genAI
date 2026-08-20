@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.handlers import register_exception_handlers
 from app.api.middleware import ObservabilityMiddleware
@@ -17,7 +19,7 @@ from app.db.session import async_engine
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     logger = get_logger("app")
     logger.info("starting", app=get_settings().app_name, env=get_settings().environment)
@@ -54,6 +56,15 @@ def create_app() -> FastAPI:
         openapi_url=None if prod else "/openapi.json",
     )
     app.add_middleware(ObservabilityMiddleware)
+    # CORS: enabled only when origins are configured (empty = disabled).
+    origins = settings.cors_origin_list
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(api_router)

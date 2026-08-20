@@ -8,7 +8,7 @@ spend (design addition for PRD # 37 Scenario 8).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +24,7 @@ from app.services.reconciliation_service import ReconciliationService
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class UsageService:
