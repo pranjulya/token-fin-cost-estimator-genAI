@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.exceptions import (
     AppError,
     BudgetExceededError,
@@ -35,6 +37,7 @@ from app.services.usage_service import UsageService
 
 if TYPE_CHECKING:
     from app.db.models import UsageRecord
+    from app.repositories.request_ledger_repository import RequestLedgerRepository
     from app.repositories.usage_repository import UsageRepository
     from app.services.budget_service import BudgetService
 
@@ -60,6 +63,7 @@ class GenerationService:
         budget_service: BudgetService,
         usage_service: UsageService,
         usage_repository: UsageRepository,
+        request_ledger_repository: RequestLedgerRepository,
         get_llm: Callable[[str], LLMProvider],
         session_commit: Callable[[], Awaitable[None]],
         generate_enabled: bool,
@@ -69,6 +73,7 @@ class GenerationService:
         self._budget_service = budget_service
         self._usage_service = usage_service
         self._usage_repository = usage_repository
+        self._request_ledger_repository = request_ledger_repository
         self._get_llm = get_llm
         self._session_commit = session_commit
         self._generate_enabled = generate_enabled
@@ -94,6 +99,14 @@ class GenerationService:
         rid = request_id or f"req_{uuid.uuid4().hex[:24]}"
         ep = endpoint or "/v1/generate"
 
+        # Idempotency gate (P2): the ledger covers reserve->settle, not just the
+        # usage row. A retry while IN_FLIGHT or after COMPLETED is a 409 — no
+        # second reserve, no second provider call.
+        ledger_row = await self._request_ledger_repository.get(rid)
+        if ledger_row is not None:
+            logger.info("generate_duplicate", request_id=rid, status=ledger_row.status)
+            raise GenerationAlreadyRecordedError(rid)
+
         existing = await self._usage_repository.get_by_request_id(rid)
         if existing is not None:
             logger.info("generate_duplicate", request_id=rid)
@@ -112,6 +125,17 @@ class GenerationService:
         )
         decision = None
         reserved = False
+        # Idempotency ledger row (P2): written for every generate, committed
+        # atomically with UoW1 when a budget exists (else with the final commit).
+        # A concurrent same-key request hits the unique constraint -> 409, before
+        # any second reserve or provider call.
+        try:
+            await self._request_ledger_repository.create_in_flight(
+                request_id=rid, provider=provider, model=model
+            )
+        except IntegrityError:
+            logger.info("generate_duplicate", request_id=rid)
+            raise GenerationAlreadyRecordedError(rid) from None
         if budget is not None:
             decision = await self._budget_service.reserve(budget, E, request_id=rid)
             await self._session_commit()  # UoW1: RESERVE or DECISION (+ alerts) durable
@@ -125,6 +149,8 @@ class GenerationService:
                 metrics.record_budget_rejection(
                     provider=provider, model=model, reason=decision.status
                 )
+                await self._request_ledger_repository.mark_failed(rid)
+                await self._session_commit()
                 raise BudgetExceededError(
                     f"Budget exceeded for request_id='{rid}': status=BLOCK "
                     f"remaining_before={decision.remaining_before} "
@@ -143,7 +169,8 @@ class GenerationService:
         if provider != "openai":
             if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
-                await self._session_commit()
+            await self._request_ledger_repository.mark_failed(rid)
+            await self._session_commit()
             raise ModelNotSupportedError(provider, model, request_id=rid)
 
         try:
@@ -158,12 +185,14 @@ class GenerationService:
         except AppError:
             if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
-                await self._session_commit()
+            await self._request_ledger_repository.mark_failed(rid)
+            await self._session_commit()
             raise
         except Exception as exc:
             if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
-                await self._session_commit()
+            await self._request_ledger_repository.mark_failed(rid)
+            await self._session_commit()
             raise ProviderError(f"Provider call failed: {exc}", request_id=rid) from exc
 
         logger.info(
@@ -200,7 +229,8 @@ class GenerationService:
         except GenerationAlreadyRecordedError:
             if reserved and budget is not None:
                 await self._budget_service.release(budget, E, request_id=rid)
-                await self._session_commit()
+            await self._request_ledger_repository.mark_failed(rid)
+            await self._session_commit()
             raise
 
         A = record.actual_cost or Decimal("0")
@@ -216,6 +246,10 @@ class GenerationService:
                 actual_cost=str(A),
                 leftover=str(max(E - A, Decimal("0"))),
             )
+
+        # UoW2: usage row + ledger COMPLETED (+ settle) commit together.
+        await self._request_ledger_repository.mark_completed(rid)
+        await self._session_commit()
 
         return GenerationResult(
             request_id=rid,

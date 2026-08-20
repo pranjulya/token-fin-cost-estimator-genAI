@@ -21,6 +21,7 @@ from app.providers.pricing.database_pricing import DatabasePricingProvider
 from app.repositories.alert_repository import AlertRepository
 from app.repositories.budget_repository import BudgetRepository
 from app.repositories.pricing_repository import PricingRepository
+from app.repositories.request_ledger_repository import RequestLedgerRepository
 from app.repositories.usage_repository import UsageRepository
 from app.services.aggregation_service import AggregationService
 from app.services.alert_service import AlertService
@@ -104,6 +105,7 @@ async def generation_service_dep(
         budget_service=budget_service,
         usage_service=usage_service,
         usage_repository=UsageRepository(session),
+        request_ledger_repository=RequestLedgerRepository(session),
         get_llm=get_llm,
         session_commit=session.commit,
         generate_enabled=settings.generate_enabled,

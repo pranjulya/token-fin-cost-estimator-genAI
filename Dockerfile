@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+# PYTHONPATH is required because uv sync --no-install-project never puts
+# `app` on site-packages; uvicorn/seed import `app` from /app/src.
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
     PATH="/app/.venv/bin:/usr/local/bin:${PATH}"
 
 WORKDIR /app
