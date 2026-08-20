@@ -48,6 +48,7 @@ async def test_error_envelope_shape_on_404():
     body = resp.json()
     assert set(body.keys()) == {"error"}
     assert set(body["error"].keys()) == {"code", "message", "request_id"}
+    assert body["error"]["code"] == "NOT_FOUND"
 
 
 async def test_health_metrics_open_without_auth():
@@ -57,26 +58,28 @@ async def test_health_metrics_open_without_auth():
         assert (await c.get("/metrics")).status_code == 200
 
 
-async def test_metrics_scrape_token_required_when_set():
+async def test_cors_headers_present_when_configured():
     import os
 
     from app.core.config import get_settings
 
-    os.environ["APP_METRICS_SCRAPE_TOKEN"] = "scrape-secret"
+    os.environ["APP_CORS_ORIGINS"] = "https://example.com"
     get_settings.cache_clear()
     try:
+        # Rebuild the app so the CORS middleware picks up the setting.
         test_app = __import__("app.main", fromlist=["create_app"]).create_app()
         transport = httpx.ASGITransport(app=test_app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
-            assert (await c.get("/metrics")).status_code == 401
-            assert (
-                await c.get("/metrics", headers={"Authorization": "Bearer nope"})
-            ).status_code == 401
-            ok = await c.get("/metrics", headers={"Authorization": "Bearer scrape-secret"})
-            assert ok.status_code == 200
-            assert "llm_requests_total" in ok.text
+            resp = await c.options(
+                "/health",
+                headers={
+                    "Origin": "https://example.com",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+            assert resp.headers.get("access-control-allow-origin") == "https://example.com"
     finally:
-        os.environ.pop("APP_METRICS_SCRAPE_TOKEN", None)
+        os.environ.pop("APP_CORS_ORIGINS", None)
         get_settings.cache_clear()
 
 

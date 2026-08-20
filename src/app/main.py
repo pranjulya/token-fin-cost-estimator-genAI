@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.handlers import register_exception_handlers
 from app.api.middleware import ObservabilityMiddleware
@@ -61,6 +62,15 @@ def create_app() -> FastAPI:
         openapi_url=None if prod else "/openapi.json",
     )
     app.add_middleware(ObservabilityMiddleware)
+    # CORS: enabled only when origins are configured (empty = disabled).
+    origins = settings.cors_origin_list
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(api_router)
