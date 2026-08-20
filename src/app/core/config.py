@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     service_name: str = "token-cost-estimator"
 
+    # Optional scrape token: when set, GET /metrics requires it via
+    # `Authorization: Bearer <token>` (e.g. Prometheus bearer_auth).
+    metrics_scrape_token: str = ""
+
     # Security (Phase 17). Comma-separated API keys; admin keys are a superset
     # of user keys (an admin key can call any route).
     api_keys: str = ""

@@ -65,3 +65,42 @@ jobs:
 
       - name: Build container
         run: docker build -t token-cost-estimator:ci .
+
+      - name: Wheel import smoke test
+        # The hatchling src layout must produce an installable wheel that
+        # imports app (pip install . should work).
+        run: |
+          uv build
+          uvx --from dist/token_cost_estimator-0.1.0-py3-none-any.whl python -c "import app.main; print('wheel import OK')"
+
+      - name: Run container + smoke test
+        # Boot the built image against the Postgres service, wait for /health
+        # and /ready, then verify the error envelope on an unauthenticated
+        # /v1 call. --network host reaches the postgres service on localhost.
+        run: |
+          docker run -d --name tce --network host \
+            -e APP_DATABASE_URL=postgresql+psycopg://ci:ci@localhost:5432/token_cost_estimator_test \
+            -e APP_API_KEYS=ci-user \
+            -e APP_ADMIN_API_KEYS=ci-admin \
+            -e APP_GENERATE_ENABLED=false \
+            token-cost-estimator:ci
+          for i in $(seq 1 30); do
+            if docker exec tce python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec tce python -c "
+import json, urllib.request, urllib.error
+h = json.load(urllib.request.urlopen('http://localhost:8000/health'))
+assert h['status'] == 'ok' and 'version' in h, h
+r = urllib.request.urlopen('http://localhost:8000/ready')
+assert json.load(r)['status'] == 'ready', r.read()
+try:
+    urllib.request.urlopen('http://localhost:8000/v1/usage')
+    raise SystemExit('expected 401 without a key')
+except urllib.error.HTTPError as e:
+    assert e.code == 401, e.code
+print('smoke OK:', h)
+"
+          docker rm -f tce

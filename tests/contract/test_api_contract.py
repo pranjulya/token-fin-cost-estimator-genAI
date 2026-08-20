@@ -57,6 +57,29 @@ async def test_health_metrics_open_without_auth():
         assert (await c.get("/metrics")).status_code == 200
 
 
+async def test_metrics_scrape_token_required_when_set():
+    import os
+
+    from app.core.config import get_settings
+
+    os.environ["APP_METRICS_SCRAPE_TOKEN"] = "scrape-secret"
+    get_settings.cache_clear()
+    try:
+        test_app = __import__("app.main", fromlist=["create_app"]).create_app()
+        transport = httpx.ASGITransport(app=test_app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+            assert (await c.get("/metrics")).status_code == 401
+            assert (
+                await c.get("/metrics", headers={"Authorization": "Bearer nope"})
+            ).status_code == 401
+            ok = await c.get("/metrics", headers={"Authorization": "Bearer scrape-secret"})
+            assert ok.status_code == 200
+            assert "llm_requests_total" in ok.text
+    finally:
+        os.environ.pop("APP_METRICS_SCRAPE_TOKEN", None)
+        get_settings.cache_clear()
+
+
 async def test_v1_requires_auth():
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
