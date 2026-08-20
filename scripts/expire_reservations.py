@@ -19,10 +19,11 @@ import argparse
 import asyncio
 import sys
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select, update
 
-from app.db.models import Budget, BudgetConsumption, BudgetEvent
+from app.db.models import Budget, BudgetConsumption, BudgetEvent, RequestLedger
 from app.db.session import AsyncSessionLocal
 
 RESERVATION_TTL_MINUTES = 15
@@ -33,7 +34,7 @@ def _stale_cutoff() -> datetime:
 
 
 async def find_stale(session) -> list[tuple[BudgetConsumption, Budget]]:
-    """Return (consumption, budget) rows with a stale reservation."""
+    """Return (consumption, budget) rows with a stale reservation (no lock)."""
     cutoff = _stale_cutoff()
     stmt = (
         select(BudgetConsumption, Budget)
@@ -49,16 +50,31 @@ async def find_stale(session) -> list[tuple[BudgetConsumption, Budget]]:
 
 
 async def release_stale(session, pairs) -> int:
-    """Release the stale reservations (mutates). Returns number released."""
+    """Release stale reservations under FOR UPDATE. Skip rows no longer stale.
+
+    Re-selects the candidate ids with a row lock and populate_existing so a
+    live reserve that landed after find_stale cannot be zeroed.
+    """
+    ids = [bc.id for bc, _ in pairs]
+    if not ids:
+        return 0
+    cutoff = _stale_cutoff()
+    stmt = (
+        select(BudgetConsumption)
+        .where(BudgetConsumption.id.in_(ids))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    rows = list((await session.scalars(stmt)).all())
     released = 0
-    for bc, budget in pairs:
+    for bc in rows:
+        if bc.reserved_amount <= 0 or bc.updated_at >= cutoff:
+            continue
         amount = bc.reserved_amount
-        await session.execute(
-            update(BudgetConsumption).where(BudgetConsumption.id == bc.id).values(reserved_amount=0)
-        )
+        bc.reserved_amount = Decimal("0")
         session.add(
             BudgetEvent(
-                budget_id=budget.id,
+                budget_id=bc.budget_id,
                 event_type="RELEASE",
                 period_key=bc.period_key,
                 amount=amount,
@@ -71,22 +87,46 @@ async def release_stale(session, pairs) -> int:
     return released
 
 
+async def mark_stale_in_flight_failed(session) -> int:
+    """Mark IN_FLIGHT ledger rows older than the TTL as FAILED (P2).
+
+    A crash after UoW1 (reserve committed) but before UoW2 (record + settle)
+    leaves an IN_FLIGHT row forever. The reservation itself is released by
+    ``release_stale``; this marks the ledger so a later retry of the same key
+    is treated as a fresh request, not a stuck duplicate.
+    """
+    cutoff = _stale_cutoff()
+    result = await session.execute(
+        update(RequestLedger)
+        .where(
+            RequestLedger.status == "IN_FLIGHT",
+            RequestLedger.updated_at < cutoff,
+        )
+        .values(status="FAILED")
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
 async def _run(apply: bool) -> int:
     async with AsyncSessionLocal() as session:
         stale = await find_stale(session)
         if not stale:
             print("No stale reservations found.")
-            return 0
-        for bc, budget in stale:
-            print(
-                f"stale: budget={budget.id} period={bc.period_key} "
-                f"reserved={bc.reserved_amount} updated={bc.updated_at.isoformat()}"
-            )
-        if apply:
-            n = await release_stale(session, stale)
-            print(f"Released {n} stale reservation(s).")
         else:
-            print(f"Dry-run: {len(stale)} candidate(s). Re-run with --apply to release.")
+            for bc, budget in stale:
+                print(
+                    f"stale: budget={budget.id} period={bc.period_key} "
+                    f"reserved={bc.reserved_amount} updated={bc.updated_at.isoformat()}"
+                )
+            if apply:
+                n = await release_stale(session, stale)
+                print(f"Released {n} stale reservation(s).")
+            else:
+                print(f"Dry-run: {len(stale)} candidate(s). Re-run with --apply to release.")
+        failed = await mark_stale_in_flight_failed(session)
+        if failed:
+            print(f"Marked {failed} stale IN_FLIGHT ledger row(s) FAILED.")
     return 0
 
 

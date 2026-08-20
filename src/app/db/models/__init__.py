@@ -5,6 +5,15 @@ from app.db.models.budget import Budget
 from app.db.models.budget_consumption import BudgetConsumption
 from app.db.models.budget_event import BudgetEvent
 from app.db.models.pricing import ModelPricing
+from app.db.models.request_ledger import RequestLedger
 from app.db.models.usage import UsageRecord
 
-__all__ = ["ModelPricing", "UsageRecord", "Budget", "BudgetConsumption", "BudgetEvent", "Alert"]
+__all__ = [
+    "ModelPricing",
+    "UsageRecord",
+    "Budget",
+    "BudgetConsumption",
+    "BudgetEvent",
+    "Alert",
+    "RequestLedger",
+]
