@@ -1,4 +1,13 @@
-# Interview Questions
+# Interview Questions — self-test companion
+
+Use these to check your understanding of the codebase before an interview or
+as a study drill. Every answer is grounded in the code and docs — read the
+linked source in [`README.md`](../README.md) and
+[`docs/`](../docs/architecture.md) first, then try to answer from memory.
+
+> The *why* behind each answer (and the trade-offs the code makes) is covered
+> in the guided walkthrough. This file is the question bank; the walkthrough
+> is the explanation.
 
 ## Money & correctness
 
