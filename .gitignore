@@ -19,6 +19,9 @@ htmlcov/
 .coverage
 htmlcov/
 
+# Local agent session metadata
+.commandcode/
+
 # OS / editor
 .DS_Store
 .idea/

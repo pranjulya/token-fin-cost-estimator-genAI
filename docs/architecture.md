@@ -5,8 +5,8 @@
 A GenAI FinOps service (FastAPI + PostgreSQL) that estimates LLM cost before
 execution, records actual usage, attributes spend, enforces budgets atomically,
 and raises alerts. It never dials an LLM itself except through the
-`POST /v1/generate` endpoint (Phases 14–15), which is the only path that
-reserves **and** settles a budget.
+`POST /v1/generate` endpoint, which is the only path that reserves **and**
+settles a budget.
 
 ## Layers
 

@@ -1,81 +1,93 @@
-# Token Cost Estimator — GenAI FinOps service
+# Token Cost Estimator — a production-shaped GenAI FinOps service
 
-Estimate LLM cost before generation, track actual usage after, attribute spend,
-reconcile estimate vs actual, enforce budgets atomically, and raise cost
-anomaly alerts — with Decimal-safe money math and frozen pricing history.
+Estimate LLM cost before you call a model, enforce budgets atomically, track
+actual spend, reconcile estimate vs actual, and alert on anomalies — with
+Decimal-safe money math, frozen pricing history, and a strict security +
+observability posture.
 
-> **Budget preflight:** `POST /v1/cost/estimate` is **evaluate-only** — it returns
-> a budget envelope (`ALLOW`/`WARN`/`CRITICAL`/`BLOCK`) but does **not** reserve
-> spend or write budget events. `POST /v1/generate` (Phase 14–15) is the only
-> path that reserves and settles.
+This is a **complete, production-shaped backend** — not a toy. It is built to be
+read, run, and studied end-to-end.
 
-## Docs
+---
 
-| Doc | Contents |
-|---|---|
-| [prd](docs/prd.md) | the full 22-phase PRD (source spec) |
-| [architecture](docs/architecture.md) | layers, provider abstractions, estimate/generate flows, Postgres-vs-Redis |
-| [adr](docs/adr/) | architecture decision records (Decimal money, fail-closed budget, no prompt persistence, …) |
-| [api](docs/api.md) | full route reference, auth scopes, error envelope |
-| [database](docs/database.md) | table-by-table design + money/idempotency rules |
-| [security](docs/security.md) | API keys, admin scope, rate limits, redaction, audit |
-| [observability](docs/observability.md) | logs, correlation IDs, metrics, spans |
-| [testing](docs/testing.md) | test layers, the concurrency proof, CI pipeline |
-| [production-scenarios](docs/production-scenarios.md) | PRD §37 failure/distributed cases |
-| [demo](docs/demo.md) | `make demo` — the team-budget-$10 portfolio walkthrough |
-| [roadmap](docs/roadmap.md) | next-quarter items (Redis rate limit, OTel, IdP, k8s, …) |
-| [Learning](Learning/) | learning path + interview Q&A |
+## Who is this for?
 
-## Docker (Phase 19)
+- **Students & GenAI aspirants** — a real, deployable service you can clone,
+  run, and study: layered architecture, provider protocols, Postgres `FOR
+  UPDATE` concurrency, idempotency, observability, security hardening, CI.
+- **Engineers evaluating a FinOps pattern** — the estimate → reserve → execute →
+  settle loop with atomic budget enforcement is the core idea; the code is the
+  reference.
+- **Interview prep** — see [`Learning/`](Learning/) for a guided study path and
+  a check-your-understanding Q&A.
+
+> **Budget preflight:** `POST /v1/cost/estimate` is **evaluate-only** — it
+> returns a budget envelope (`ALLOW`/`WARN`/`CRITICAL`/`BLOCK`) but does **not**
+> reserve spend. `POST /v1/generate` is the only path that reserves **and**
+> settles.
+
+---
+
+## What you'll learn from this repo
+
+- **Decimal-safe money math** — never a float for money (`utils/money.py`,
+  ADR-001).
+- **Race-free budget enforcement** — one Postgres row locked with `FOR UPDATE`
+  per budget period; concurrent reserves cannot overspend (proven by a real
+  parallel test).
+- **Idempotency across a money lifecycle** — a `request_ledger` covering
+  reserve → settle, plus an `Idempotency-Key` header on generate.
+- **Provider abstraction** — LLM / pricing / tokenizer sit behind `Protocol`s;
+  swapping a vendor never touches business logic.
+- **Versioned pricing** — history never re-prices (ADR-005).
+- **Observability** — structured logs, correlation IDs, Prometheus metrics,
+  lightweight span events.
+- **Security hardening** — API-key auth with admin scope, hashed keys,
+  rate limiting, input limits, log redaction, audit events, prod boot guard.
+- **CI that means it** — mypy strict, ruff (B/UP/S), 80% coverage gate, tests
+  against real Postgres, and a container smoke test.
+
+---
+
+## Quick start
+
+### Docker (easiest)
 
 ```bash
 docker compose up --build
+# → http://localhost:8000/health
+# → http://localhost:8000/docs   (OpenAPI, dev only)
 ```
 
-- `app` runs migrations on boot, then uvicorn on `:8000`. It seeds pricing
-  (idempotent) only when `APP_SEED_PRICING=true` (the compose dev default).
-- In production, prefer running `alembic upgrade head` as a one-shot migrate
-  job and leave `APP_SEED_PRICING=false` (seed explicitly).
-- `db` is PostgreSQL 14 with a health check; the app waits for it.
-- `/health`, `/ready`, `/metrics` are open; `/v1/*` requires `X-API-Key`.
-  Compose defaults: user key `dev-user-key`, admin key `dev-admin-key`.
-- **Redis is intentionally omitted** — the PRD lists it, but this service uses
-  Postgres `FOR UPDATE` for budget concurrency instead of Redis counters, so a
-  Redis container would be dead infrastructure.
+Compose defaults: user key `dev-user-key`, admin key `dev-admin-key`
+(header `X-API-Key`).
 
-## Stack
-
-Python 3.12 · FastAPI · SQLAlchemy 2.0 (async) · Alembic · PostgreSQL 14 ·
-structlog · tiktoken · pytest
-
-## Quick start (macOS, Homebrew Postgres already running)
+### Local (macOS/Linux, Postgres running)
 
 ```bash
-# 1. Create the database (once)
-psql -d postgres -c "CREATE DATABASE token_cost_estimator;"
-
-# 2. Install deps + apply migrations + seed realistic OpenAI pricing
-uv sync                       # or: uv pip install -e ".[dev]"
-uv run alembic upgrade head
-uv run python scripts/seed_pricing.py
-
-# 3. Run
-uv run uvicorn app.main:app --reload
-# → http://127.0.0.1:8000/docs   (OpenAPI)
-# → http://127.0.0.1:8000/health
+make setup        # uv sync + create DBs + migrate + seed pricing
+make run          # uvicorn on :8000
+make demo         # the $10 team-budget walkthrough
 ```
 
-Or use the Makefile: `make setup`, `make run`, `make test`, `make seed`.
+Or step by step: `uv sync` → `uv run alembic upgrade head` →
+`uv run python scripts/seed_pricing.py` → `uv run uvicorn app.main:app --reload`.
+
+> `APP_SEED_PRICING=true` is the dev default in compose; production seeds
+> explicitly. See [`docs/security.md`](docs/security.md) for the production
+> compose overlay.
+
+---
 
 ## Try it
 
 ```bash
-# Estimate cost (OpenAI-tiktoken real token count)
+# Estimate cost (real tiktoken token count, evaluate-only budget envelope)
 curl -X POST localhost:8000/v1/cost/estimate -H 'Content-Type: application/json' \
   -d '{"provider":"openai","model":"gpt-4o","input":"Explain microservices",
        "expected_output_tokens":200}'
 
-# Record actual usage after the LLM call (supply real token counts from provider response)
+# Record actual usage after an LLM call (supply real token counts)
 curl -X POST localhost:8000/v1/usage -H 'Content-Type: application/json' \
   -d '{"request_id":"req_a1","provider":"openai","model":"gpt-4o",
        "actual_input_tokens":100,"actual_output_tokens":80,"team_id":"ml"}'
@@ -87,131 +99,113 @@ curl localhost:8000/v1/cost/by-endpoint
 curl localhost:8000/v1/cost/by-team
 ```
 
+To actually **generate** completions (the full reserve → call → settle loop),
+set `APP_GENERATE_ENABLED=true` and `APP_OPENAI_API_KEY=sk-...`.
+
+---
+
+## Architecture in 30 seconds
+
+```
+api/v1 routes ──> services ──> repositories ──> PostgreSQL
+      │              │
+      │              └──> domain (pure policy, no framework imports)
+      └──> providers (TokenCounter, PricingProvider, LLMProvider)
+```
+
+- **Estimate** is a cheap calculator (tokenize → price → evaluate, no writes).
+- **Generate** is the money loop: reserve `E` (`FOR UPDATE`) → mid-commit →
+  LLM call (no DB lock held) → record actuals (idempotent) → settle.
+- **Why Postgres, not Redis?** The PRD called for Redis counters, but a single
+  locked Postgres row gives the same race-free guarantee with zero extra
+  infrastructure. Documented in ADR-003.
+
+Full detail: [`docs/architecture.md`](docs/architecture.md).
+
+---
+
 ## API surface
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/cost/estimate` | tokenize + price + estimate cost (evaluate-only budget envelope) |
-| POST | `/v1/generate` | end-to-end: estimate → budget reserve → LLM call → record → settle (disabled unless `APP_GENERATE_ENABLED=true`) |
+| POST | `/v1/cost/estimate` | tokenize + price + estimate (evaluate-only budget envelope) |
+| POST | `/v1/generate` | end-to-end: estimate → reserve → LLM call → record → settle |
 | POST | `/v1/usage` | record actual usage (idempotent on `request_id`) |
-| GET | `/v1/usage` | list usage |
-| GET | `/v1/usage/summary` | totals |
+| GET | `/v1/usage` `/v1/usage/summary` | list + totals |
 | GET | `/v1/cost/by-model` `/by-endpoint` `/by-team` | spend attribution |
-| POST/GET | `/v1/models/pricing` | pricing admin (versioned) |
-| POST/GET | `/v1/budgets` `/v1/budgets/{id}` | budget CRUD (TEAM/APPLICATION, MONTHLY/DAILY) |
-| GET/POST | `/v1/alerts` `/v1/alerts/{id}/acknowledge` | budget-threshold + cost-anomaly alerts |
-| GET | `/metrics` | Prometheus metrics (Phase 16) |
-| GET | `/health` `/ready` | probes |
+| POST/GET | `/v1/models/pricing` | versioned pricing |
+| POST/GET/PATCH | `/v1/budgets` `/v1/budgets/{id}` | budget CRUD (TEAM/APPLICATION) |
+| GET/POST | `/v1/alerts` `/v1/alerts/{id}/acknowledge` | threshold + anomaly alerts |
+| GET | `/metrics` `/health` `/ready` | ops probes |
 
-Errors follow one envelope: `{"error":{"code","message","request_id"}}`.
+Errors use one envelope: `{"error": {"code", "message", "request_id"}}`.
 
-## Generating completions
+Full reference: [`docs/api.md`](docs/api.md).
 
-`POST /v1/generate` is the only path that calls an LLM **and** the only path
-that reserves **and** settles a budget. It is **off by default** — set these to
-enable it:
+---
 
-```text
-APP_GENERATE_ENABLED=true
-APP_OPENAI_API_KEY=sk-...
-APP_OPENAI_BASE_URL=          # optional, defaults to api.openai.com/v1
-APP_OPENAI_TIMEOUT_SECONDS=60 # optional
-```
-
-- STRICT budget BLOCK → `403 BUDGET_EXCEEDED`, the LLM is never called.
-- Provider failure → reservation is released and no SUCCESS usage row is written.
-- Repeating a `request_id` → `409 GENERATION_ALREADY_RECORDED`; completion text
-  is **not** stored — list `GET /v1/usage` and filter by `request_id` for money.
-- After a 5xx, retry with a **new** `request_id`.
-- Prompts and completions are never logged or persisted.
-
-`POST /v1/usage` remains for clients that call an LLM themselves (ledger only —
-it does not reserve or settle budgets).
-
-## Observability (Phase 16)
-
-- **Structured logs** — structlog (JSON in production). Every request carries
-  `request_id`, `correlation_id`, `endpoint`, `method`, `status`, `latency_ms`
-  via an access-log middleware; a `request_completed` event is emitted per
-  request. Prompts/completions are never logged.
-- **Correlation IDs** — send `X-Request-ID` (or `X-Correlation-ID`) and it is
-  echoed on the response and propagated through logs/errors; otherwise a
-  `req_...` id is generated.
-- **Metrics** — `GET /metrics` (Prometheus text format) with the PRD metric
-  set: `llm_requests_total`, `llm_input_tokens_total`, `llm_output_tokens_total`,
-  `llm_cost_total`, `llm_estimated_cost_total`, `llm_budget_rejections_total`,
-  `llm_cost_anomaly_total`, `llm_request_duration_seconds`. Disable with
-  `APP_METRICS_ENABLED=false`.
-- **Tracing** — lightweight span events (`span_completed` with
-  `span_duration_seconds`) around Tokenization, Pricing Lookup, Cost
-  Estimation, Budget Evaluation, LLM Provider, and Usage Reconciliation.
-
-## Security (Phase 17)
-
-- **API-key auth** — every `/v1` route requires a valid key via `X-API-Key` or
-  `Authorization: Bearer <key>`. Configure `APP_API_KEYS` (comma-separated).
-  `/health`, `/ready`, `/metrics` stay open for ops probes.
-- **Admin scope** — `APP_ADMIN_API_KEYS` (a superset of user keys) grants
-  budget management, alerts, and pricing writes. A user key calling an admin
-  route → `403 FORBIDDEN`; missing/invalid key → `401 UNAUTHORIZED`.
-- **Rate limiting** — in-memory per-key token buckets: `APP_RATE_LIMIT_PER_MINUTE`
-  on usage/estimate, `APP_RATE_LIMIT_GENERATE_PER_MINUTE` (default 10) on
-  `/v1/generate`. Exceeded → `429 RATE_LIMITED`.
-- **Input limits** — `max_prompt_chars` / `max_expected_output_tokens` enforced
-  on estimate + generate + usage token counts.
-- **Log redaction** — a structlog processor redacts secret-shaped keys
-  (`api_key`, `token`, `authorization`, …) from every log event.
-- **Audit events** — `audit_*` structured logs on pricing/budget/alert
-  mutations (actor is a key prefix, never the raw key).
-
-## Design highlights
-
-- **Decimal-only money** — `src/app/utils/money.py`; per-million storage →
-  per-token conversion; no binary floats (PRD # 21, ADR-001).
-- **Pricing versioning** — every `usage_records` row stores `pricing_version`;
-  history never re-prices (PRD # 20, ADR-005).
-- **Abstractions** — `TokenCounter`, `PricingProvider`, pure `CostCalculator`:
-  business logic never imports FastAPI or the DB driver (§13).
-- **Idempotent usage ledger** — replaying `POST /v1/usage` with the same
-  `request_id` returns the existing record (no double-count on retries).
-- **Single provider for now** — OpenAI pricing seeded (`gpt-4o`, `gpt-4o-mini`,
-  `gpt-4-turbo`, `o1-mini`).
-
-## Tests
+## Tests & CI
 
 ```bash
-uv run pytest                 # unit + integration (real test DB)
+make test        # unit + integration + contract (real Postgres)
+make coverage    # + 80% coverage gate on src/app
+make typecheck   # mypy --strict
+make lint        # ruff (E, F, I, W, B, UP, S)
 ```
 
-`tests/conftest.py` points at the `token_cost_estimator_test` database
-(created by `make test-db`) and truncates between tests.
+- **216 tests**, **90% coverage**, mypy strict, ruff B/UP/S.
+- The concurrency proof: 10 parallel reserves against a $100 budget — exactly
+  4 fit, 6 BLOCK, the counter never overspends.
+- CI (`.github/workflows/ci.yml`) runs everything **and** boots the built
+  container, curling `/health` + `/ready` + a 401 check.
 
-## Layout
+---
+
+## Docs
+
+| Doc | Contents |
+|---|---|
+| [architecture](docs/architecture.md) | layers, provider abstractions, the estimate/generate flows |
+| [adr](docs/adr/) | architecture decision records (Decimal money, fail-closed budget, …) |
+| [api](docs/api.md) | full route reference, auth scopes, error envelope |
+| [database](docs/database.md) | table-by-table design + money/idempotency rules |
+| [security](docs/security.md) | keys, hashing, rate limits, redaction, audit, prod deploy |
+| [observability](docs/observability.md) | logs, correlation IDs, metrics, spans |
+| [testing](docs/testing.md) | test layers, the concurrency proof, CI pipeline |
+| [production-scenarios](docs/production-scenarios.md) | failure/distributed cases |
+| [demo](docs/demo.md) | the $10 team-budget walkthrough (`make demo`) |
+| [roadmap](docs/roadmap.md) | next-quarter items (Redis rate limit, OTel, IdP, …) |
+| [prd](docs/prd.md) | the original 22-phase PRD (source spec) |
+| [Learning](Learning/) | study guide + interview Q&A |
+
+---
+
+## Project layout
 
 ```
 src/app/
-  api/v1/        routes (cost, usage, pricing, health)
-  core/          config, exceptions, logging
-  db/            session, models
-  domain/        pure domain (pricing, cost, usage)
-  providers/     tokenizers (tiktoken), pricing (DB-backed)
-  repositories/  pricing, usage
+  api/v1/        routes (cost, usage, pricing, health, alerts, budgets, generate)
+  core/          config, exceptions, logging, metrics, audit, version
+  db/            session + models (usage, pricing, budgets, alerts, request_ledger)
+  domain/        pure policy — no framework imports
+  providers/     tokenizers (tiktoken), pricing (DB-backed), llm (httpx)
+  repositories/  all SQLAlchemy I/O
   schemas/       Pydantic request/response
-  services/      cost_calculator, cost_estimator, usage, reconciliation, aggregation
-  utils/money.py Decimal money
+  services/      cost, budget, usage, generation, alert, aggregation
+  utils/         Decimal money helpers
 migrations/      Alembic
-scripts/         seed_pricing.py
-tests/           unit + integration
+scripts/         seed_pricing.py, expire_reservations.py (sweeper), demo.py
+tests/           unit + integration + contract + concurrency
+docs/            architecture, api, security, observability, …
 ```
 
-## Roadmap
+---
 
-**All PRD phases (0–22) are implemented.**
+## Contributing
 
-- Phases 0–13: vertical slice, budgets (Postgres-atomic reservations), alerts.
-- Phases 14–15: `LLMProvider` + `POST /v1/generate` reserve→call→settle.
-- Phase 16: observability. Phase 17: security. Phase 18: comprehensive testing.
-- Phase 19: Docker. Phase 20: CI. Phase 21: documentation.
-- Phase 22: portfolio demo (`make demo`).
+Open to contributions and questions. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) — including a "for students" note.
 
-See the [demo](docs/demo.md) to run the $10 team-budget walkthrough.
+## License
+
+MIT — see [`LICENSE`](LICENSE).

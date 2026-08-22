@@ -4,6 +4,14 @@ Thanks for considering a contribution! This is a FastAPI + PostgreSQL FinOps
 service — estimate LLM cost before execution, track actual usage, enforce
 budgets atomically, and alert on anomalies.
 
+## For students
+
+Reading and running the code is encouraged — the [`Learning/`](Learning/)
+study guide and [`docs/`](docs/) are there for you. Questions are welcome as
+GitHub issues (tag them `question`). Small, focused PRs that fix a bug or
+clarify a doc are great; if you're unsure whether a change fits, open an issue
+first and discuss.
+
 ## Setup
 
 ```bash
