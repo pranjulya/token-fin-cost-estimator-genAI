@@ -1,0 +1,28 @@
+name: "Feature Request"
+description: "Suggest an idea, provider extension, or enhancement"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome ideas for new LLM providers, FinOps aggregation capabilities, budget models, or observability integrations!
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem Statement"
+      description: "Is your feature request related to a specific FinOps problem or limitation?"
+      placeholder: "e.g., We need to attribute costs across multi-tenant workspaces..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed Solution"
+      description: "A clear description of what you want to happen and how it fits into the architecture."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Any alternative solutions or features you've considered."
