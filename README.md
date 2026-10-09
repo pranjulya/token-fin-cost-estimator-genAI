@@ -1,6 +1,6 @@
 # Token Cost Estimator — GenAI FinOps & Gateway Service
 
-[![CI](https://github.com/pranjulya/token_cost_estimator/actions/workflows/ci.yml/badge.svg)](https://github.com/pranjulya/token_cost_estimator/actions/workflows/ci.yml)
+[![CI](https://github.com/pranjulya/token-fin-cost-estimator-genAI/actions/workflows/ci.yml/badge.svg)](https://github.com/pranjulya/token-fin-cost-estimator-genAI/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-336791.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -86,8 +86,8 @@ Spins up the FastAPI application and a dedicated PostgreSQL 14 instance with aut
 
 ```bash
 # Clone and boot the environment
-git clone https://github.com/pranjulya/token_cost_estimator.git
-cd token_cost_estimator
+git clone https://github.com/pranjulya/token-fin-cost-estimator-genAI.git
+cd token-fin-cost-estimator-genAI
 docker compose up --build
 ```
 
@@ -266,7 +266,7 @@ make security-check
 ## 📁 Repository Structure
 
 ```
-token_cost_estimator/
+token-fin-cost-estimator-genAI/
 ├── src/app/
 │   ├── api/v1/          # FastAPI route handlers & dependency injection
 │   ├── core/            # App configuration, structured logging, exceptions
