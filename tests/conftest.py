@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import os
 
-os.environ["APP_DATABASE_URL"] = "postgresql+psycopg://localhost:5432/token_cost_estimator_test"
+# Always point at the dedicated test database (never a dev DB from .env: the
+# session fixture drops all tables on teardown). CI supplies credentials via
+# TEST_DATABASE_URL; the default relies on local passwordless (trust) auth.
+os.environ["APP_DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+psycopg://localhost:5432/token_cost_estimator_test",
+)
 # Phase 17: default API keys for the test suite. Existing integration tests
 # authenticate as the user key; tests needing admin use the admin key explicitly.
 os.environ["APP_API_KEYS"] = "test-user-key"
