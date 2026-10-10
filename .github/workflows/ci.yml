@@ -94,16 +94,16 @@ jobs:
             sleep 2
           done
           docker exec tce python -c "
-import json, urllib.request, urllib.error
-h = json.load(urllib.request.urlopen('http://localhost:8000/health'))
-assert h['status'] == 'ok' and 'version' in h, h
-r = urllib.request.urlopen('http://localhost:8000/ready')
-assert json.load(r)['status'] == 'ready', r.read()
-try:
-    urllib.request.urlopen('http://localhost:8000/v1/usage')
-    raise SystemExit('expected 401 without a key')
-except urllib.error.HTTPError as e:
-    assert e.code == 401, e.code
-print('smoke OK:', h)
-"
+          import json, urllib.request, urllib.error
+          h = json.load(urllib.request.urlopen('http://localhost:8000/health'))
+          assert h['status'] == 'ok' and 'version' in h, h
+          r = urllib.request.urlopen('http://localhost:8000/ready')
+          assert json.load(r)['status'] == 'ready', r.read()
+          try:
+              urllib.request.urlopen('http://localhost:8000/v1/usage')
+              raise SystemExit('expected 401 without a key')
+          except urllib.error.HTTPError as e:
+              assert e.code == 401, e.code
+          print('smoke OK:', h)
+          "
           docker rm -f tce
