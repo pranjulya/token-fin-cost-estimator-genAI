@@ -65,3 +65,16 @@ class TestIsValidAmount:
 
     def test_rejects_float_artifacts(self):
         assert not is_valid_amount(float("nan"))
+
+
+def test_money_json_is_fixed_point_never_scientific():
+    from decimal import Decimal
+
+    from pydantic import TypeAdapter
+
+    from app.schemas.common import Money
+
+    ta = TypeAdapter(Money)
+    assert ta.dump_python(Decimal("1E+1")) == "10"
+    assert ta.dump_python(Decimal("0.00004")) == "0.00004"
+    assert ta.dump_python(Decimal("1E-7")) == "0.0000001"

@@ -25,19 +25,24 @@ def _validate_signed(value: Any) -> Decimal:
     return d
 
 
+def _plain(v: Decimal) -> str:
+    """Fixed-point string: ``str(Decimal('1E+1'))`` would leak scientific notation."""
+    return format(v, "f")
+
+
 # Money serialized as a string in JSON so decimal precision is never lost
 # (binary float conversion would break financial accuracy, PRD NFR).
 Money = Annotated[
     Decimal,
     PlainValidator(_validate_money),
-    PlainSerializer(lambda v: str(v), return_type=str),
+    PlainSerializer(_plain, return_type=str),
 ]
 
 # Signed money: variances and deltas may be negative (PRD # 24).
 SignedMoney = Annotated[
     Decimal,
     PlainValidator(_validate_signed),
-    PlainSerializer(lambda v: str(v), return_type=str),
+    PlainSerializer(_plain, return_type=str),
 ]
 
 

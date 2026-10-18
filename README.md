@@ -98,7 +98,7 @@ docker compose up --build
 
 ### Local Development (macOS / Linux)
 
-Requires Python 3.12, PostgreSQL 14+, and [uv](https://docs.astral.sh/uv/):
+Requires Python 3.12, PostgreSQL 14+ and [uv](https://docs.astral.sh/uv/). On Windows, use Docker Compose above or WSL2.
 
 ```bash
 # 1. Install dependencies, create databases, migrate, and seed pricing
@@ -107,6 +107,18 @@ make setup
 # 2. Start the local development server with auto-reload
 make run
 ```
+
+`make setup` runs `psql` with your OS user and no password. If your Postgres needs a password, or lives elsewhere, export `PGHOST`/`PGUSER`/`PGPASSWORD` for `psql` and set both URLs before running anything else:
+
+```bash
+export APP_DATABASE_URL=postgresql+psycopg://USER:PASS@localhost:5432/token_cost_estimator
+export TEST_DATABASE_URL=postgresql+psycopg://USER:PASS@localhost:5432/token_cost_estimator_test
+export APP_API_KEYS=dev-user-key APP_ADMIN_API_KEYS=dev-admin-key
+```
+
+`make run` needs `APP_API_KEYS` and `APP_ADMIN_API_KEYS` (or a `.env` copied from `.env.example`). Without keys every `/v1` call returns `401`.
+
+> **Token counting needs a one-time download.** `tiktoken` fetches its encoding files on first use. The Docker image bakes them in. For a local install, run `make run` once with internet access. If the download is not possible, the service falls back to a ~4-characters-per-token estimate and logs a `tiktoken_unavailable_using_heuristic` warning. It never fails the request.
 
 ---
 
@@ -118,20 +130,22 @@ Run the self-contained portfolio demo to verify all core flows (normal usage, st
 make demo
 ```
 
+The demo resets its schema on every run. It never touches your main database: it switches to a throwaway `<your_db_name>_demo` database and creates it if missing. The demo needs a reachable Postgres, so run `make setup` first (or point `APP_DATABASE_URL` at your Postgres).
+
 ```text
 == Beat 1: Normal request ==
-  [estimate] status=200 budget=ALLOW cost=0.00101750
-  [usage] status=201 actual_cost=0.00033750 variance=0.00033750
+  [estimate] status=200 budget=ALLOW cost=0.0010175
+  [usage] status=201 actual_cost=0.0003375 variance=0.0003375
 
 == Beat 2: Large request (blocked before provider) ==
   [estimate] status=200 budget=BLOCK
-  [generate] status=403 code=BUDGET_EXCEEDED (Zero upstream provider calls made)
+  [generate] status=403 code=BUDGET_EXCEEDED
 
 == Beat 3: Multiple requests -> threshold + alert ==
-  [summary] requests=7 cost=0.00236250
-  [by-model] model=gpt-4o cost=0.00236250
-  [alerts] count=1 (BUDGET_THRESHOLD alert generated)
-  [ack] alert_id=1 -> 200 OK
+  [summary] requests=7 cost=0.0023625000
+  [by-model] model=gpt-4o cost=0.0023625000
+  [alerts] count=1
+  [ack] alert_id=1 -> 200
 ```
 
 ---
@@ -140,8 +154,20 @@ make demo
 
 All `/v1/*` routes require an `X-API-Key` or `Authorization: Bearer <key>` header.
 
+### 0. Create a Budget (admin key, one time)
+
+Without a budget, the estimate returns `"budget": {"status": "ENABLED", ...}` with no limits. Create a $10 monthly STRICT budget for the `analytics` team first:
+
+```bash
+curl -X POST http://localhost:8000/v1/budgets \
+  -H "X-API-Key: dev-admin-key" \
+  -H "Content-Type: application/json" \
+  -d '{"scope_type": "TEAM", "scope_id": "analytics", "period_type": "MONTHLY",
+       "limit_amount": "10.00", "enforcement_mode": "STRICT"}'
+```
+
 ### 1. Pre-flight Cost Estimation
-Tokenize prompt and calculate cost against current active model rates:
+Tokenize prompt and calculate cost against current active model rates. The budget is evaluated but nothing is reserved:
 
 ```bash
 curl -X POST http://localhost:8000/v1/cost/estimate \
@@ -158,19 +184,31 @@ curl -X POST http://localhost:8000/v1/cost/estimate \
 
 ```json
 {
+  "request_id": "req_...",
+  "provider": "openai",
+  "model": "gpt-4o",
   "estimated_input_tokens": 10,
   "estimated_output_tokens": 500,
-  "estimated_input_cost": "0.00005000",
-  "estimated_output_cost": "0.00500000",
-  "estimated_total_cost": "0.00505000",
+  "estimated_input_cost": "0.000025",
+  "estimated_cached_input_cost": "0",
+  "estimated_output_cost": "0.005",
+  "estimated_total_cost": "0.005025",
   "currency": "USD",
   "pricing_version": 1,
-  "budget_status": "ALLOW"
+  "budget": {
+    "status": "ALLOW",
+    "remaining_before_request": "10",
+    "remaining_after_estimate": "9.994975"
+  }
 }
 ```
 
+`estimated_input_tokens` is exact (tiktoken) when the encoding files are available. In the heuristic fallback it is about 4 characters per token, so you may see 16 instead of 10 for this prompt. The numbers above are illustrative; request IDs and token counts vary.
+
 ### 2. End-to-End Generation (Atomic Budget Lock)
-Executes budget reservation, makes the LLM call, records actual usage, and settles spend:
+Executes budget reservation, makes the LLM call, records actual usage, and settles spend.
+
+This endpoint spends real money, so it is **off by default** (`GENERATION_DISABLED` error). To enable it, set `APP_GENERATE_ENABLED=true` and `APP_OPENAI_API_KEY=sk-...` (for Docker Compose, edit the `app` service environment in `docker-compose.yml`), then restart. Use `make demo` to see the full flow with a mock LLM and no key.
 
 ```bash
 curl -X POST http://localhost:8000/v1/generate \
@@ -180,9 +218,9 @@ curl -X POST http://localhost:8000/v1/generate \
   -d '{
     "provider": "openai",
     "model": "gpt-4o",
-    "prompt": "Explain raft consensus in two sentences.",
-    "expected_output_tokens": 100,
-    "team_id": "core-infra"
+    "input": "Explain raft consensus in two sentences.",
+    "max_output_tokens": 100,
+    "team_id": "analytics"
   }'
 ```
 
