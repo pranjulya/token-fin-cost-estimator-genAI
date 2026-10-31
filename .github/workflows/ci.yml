@@ -107,3 +107,28 @@ jobs:
           print('smoke OK:', h)
           "
           docker rm -f tce
+
+      - name: README smoke test (run the documented curl commands)
+        # Executes every curl example in README.md against the built image,
+        # booted the way the README says (dev keys, seeded pricing) on a fresh
+        # database. Fails if a documented payload, status or response shape
+        # drifts from the real API. See scripts/readme_smoke.py.
+        run: |
+          PGPASSWORD=ci psql -h localhost -U ci -d postgres -c "CREATE DATABASE readme_smoke"
+          docker run -d --name tce-readme --network host \
+            -e APP_DATABASE_URL=postgresql+psycopg://ci:ci@localhost:5432/readme_smoke \
+            -e APP_ENVIRONMENT=development \
+            -e APP_SEED_PRICING=true \
+            -e APP_API_KEYS=dev-user-key \
+            -e APP_ADMIN_API_KEYS=dev-admin-key \
+            -e APP_GENERATE_ENABLED=false \
+            token-cost-estimator:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/ready >/dev/null; then break; fi
+            sleep 2
+          done
+          python3 scripts/readme_smoke.py --base-url http://localhost:8000 || {
+            docker logs tce-readme | tail -40
+            exit 1
+          }
+          docker rm -f tce-readme

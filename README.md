@@ -169,6 +169,7 @@ curl -X POST http://localhost:8000/v1/budgets \
 ### 1. Pre-flight Cost Estimation
 Tokenize prompt and calculate cost against current active model rates. The budget is evaluated but nothing is reserved:
 
+<!-- smoke-shape -->
 ```bash
 curl -X POST http://localhost:8000/v1/cost/estimate \
   -H "X-API-Key: dev-user-key" \
@@ -210,6 +211,7 @@ Executes budget reservation, makes the LLM call, records actual usage, and settl
 
 This endpoint spends real money, so it is **off by default** (`GENERATION_DISABLED` error). To enable it, set `APP_GENERATE_ENABLED=true` and `APP_OPENAI_API_KEY=sk-...` (for Docker Compose, edit the `app` service environment in `docker-compose.yml`), then restart. Use `make demo` to see the full flow with a mock LLM and no key.
 
+<!-- smoke-expect: 503 GENERATION_DISABLED -->
 ```bash
 curl -X POST http://localhost:8000/v1/generate \
   -H "X-API-Key: dev-user-key" \
