@@ -7,6 +7,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
+    TIKTOKEN_CACHE_DIR=/opt/tiktoken \
     PATH="/app/.venv/bin:/usr/local/bin:${PATH}"
 
 WORKDIR /app
@@ -14,6 +15,15 @@ WORKDIR /app
 # Layer-cache dependency install: copy manifests first, then lockfile.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
+
+# tiktoken downloads its BPE files on first use. Bake them into the image so
+# token counting works offline (classrooms, proxies, air-gapped hosts). Best
+# effort: if the build host is offline the app still runs, using the heuristic
+# token estimate until the files can be fetched.
+RUN mkdir -p /opt/tiktoken \
+    && (python -c "import tiktoken; [tiktoken.get_encoding(e) for e in ('o200k_base', 'cl100k_base')]" \
+        || echo "WARNING: tiktoken encodings not pre-fetched; runtime will fall back to heuristic counts") \
+    && chmod -R a+rX /opt/tiktoken
 
 # Copy source, migrations, and scripts.
 COPY src/ src/

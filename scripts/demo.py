@@ -19,16 +19,48 @@ from datetime import date
 from decimal import Decimal
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
-from app.api.dependencies import llm_factory_dep
 from app.core.config import get_settings
-from app.db import models  # noqa: F401  (register tables)
-from app.db.base import Base
-from app.db.session import AsyncSessionLocal, async_engine
-from app.main import app
-from app.providers.llm.base import LLMCompletion
-from app.repositories.budget_repository import BudgetRepository
-from app.repositories.pricing_repository import PricingRepository
+
+
+def _isolate_database() -> str:
+    """Point the demo at a throwaway ``*_demo`` database and return its name.
+
+    The demo drops every table before it runs. To make sure that can never
+    touch real data, it never uses the configured database directly: it
+    switches to ``<name>_demo`` (created on demand). A database that already
+    ends in ``_demo`` or ``_test`` is used as is.
+    """
+    url = make_url(get_settings().database_url)
+    name = url.database or "token_cost_estimator"
+    if not name.endswith(("_demo", "_test")):
+        name = f"{name}_demo"
+    demo_url = url.set(database=name)
+    admin = create_engine(
+        demo_url.set(database="postgres"), isolation_level="AUTOCOMMIT", future=True
+    )
+    with admin.connect() as conn:
+        exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": name})
+        if exists.scalar() is None:
+            conn.execute(text(f'CREATE DATABASE "{name}"'))  # noqa: S608 (identifier, not input)
+    admin.dispose()
+    os.environ["APP_DATABASE_URL"] = demo_url.render_as_string(hide_password=False)
+    get_settings.cache_clear()
+    return name
+
+
+_DEMO_DB = _isolate_database()
+
+from app.api.dependencies import llm_factory_dep  # noqa: E402
+from app.db import models  # noqa: E402, F401  (register tables)
+from app.db.base import Base  # noqa: E402
+from app.db.session import AsyncSessionLocal, async_engine  # noqa: E402
+from app.main import app  # noqa: E402
+from app.providers.llm.base import LLMCompletion  # noqa: E402
+from app.repositories.budget_repository import BudgetRepository  # noqa: E402
+from app.repositories.pricing_repository import PricingRepository  # noqa: E402
 
 USER_KEY = "demo-user-key"
 ADMIN_KEY = "demo-admin-key"
@@ -237,6 +269,7 @@ async def _demo() -> None:
 
 
 def main() -> None:
+    print(f"Using throwaway database '{_DEMO_DB}' (reset on every run; your data is untouched).")
     if not (_env("APP_API_KEYS") or _env("APP_ADMIN_API_KEYS")):
         os.environ["APP_API_KEYS"] = f"{USER_KEY},{ADMIN_KEY}"
         os.environ["APP_ADMIN_API_KEYS"] = ADMIN_KEY
