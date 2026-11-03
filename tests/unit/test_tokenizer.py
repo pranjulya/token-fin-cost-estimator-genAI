@@ -46,3 +46,55 @@ class TestRegistry:
     def test_unknown_model_falls_back(self):
         tc = get_token_counter("custom-llama-9000")
         assert isinstance(tc, HeuristicTokenCounter)
+
+
+class _FakeEncoding:
+    def encode(self, text, disallowed_special=()):
+        return text.split()
+
+
+def _fake_tiktoken(monkeypatch):
+    import tiktoken
+
+    def encoding_for_model(model):
+        if model.startswith("gpt-"):
+            return _FakeEncoding()
+        raise KeyError(model)
+
+    monkeypatch.setattr(tiktoken, "encoding_for_model", encoding_for_model)
+
+
+class TestModelRouting:
+    def test_routes_known_model_to_tiktoken(self, monkeypatch):
+        from app.providers.tokenizers.openai_tokenizer import ModelRoutingTokenCounter
+
+        _fake_tiktoken(monkeypatch)
+        # 5 words via the fake BPE; the heuristic would say (26+3)//4 = 7.
+        assert ModelRoutingTokenCounter().count("gpt-4o", "Explain the Decimal money math") == 5
+
+    def test_routes_unknown_model_to_heuristic(self, monkeypatch):
+        from app.providers.tokenizers.openai_tokenizer import ModelRoutingTokenCounter
+
+        _fake_tiktoken(monkeypatch)
+        assert ModelRoutingTokenCounter().count("custom-llama-9000", "hello") == 2
+
+    async def test_estimator_dependency_counts_with_request_model(self, monkeypatch):
+        # Regression: the API passed the provider name ("openai") as the model, so tiktoken
+        # was never used and every estimate came from the 4-chars-per-token heuristic.
+        from app.api.dependencies import estimator_dep
+
+        _fake_tiktoken(monkeypatch)
+        estimator = await estimator_dep(session=None)
+        assert estimator._token_counter.count("gpt-4o", "one two three") == 3
+
+
+def test_routing_falls_back_when_encoding_cannot_load(monkeypatch):
+    import tiktoken
+
+    from app.providers.tokenizers.openai_tokenizer import ModelRoutingTokenCounter
+
+    def offline(model):
+        raise OSError("no network")
+
+    monkeypatch.setattr(tiktoken, "encoding_for_model", offline)
+    assert ModelRoutingTokenCounter().count("gpt-4o", "hello") == 2

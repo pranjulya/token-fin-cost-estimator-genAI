@@ -46,10 +46,10 @@ def _pricing_provider(session: AsyncSession) -> DatabasePricingProvider:
 
 
 async def estimator_dep(session: AsyncSession = Depends(get_db_session)) -> CostEstimator:
-    from app.providers.tokenizers.openai_tokenizer import get_token_counter
+    from app.providers.tokenizers.openai_tokenizer import ModelRoutingTokenCounter
 
     return CostEstimator(
-        token_counter=get_token_counter("openai"),
+        token_counter=ModelRoutingTokenCounter(),
         pricing=_pricing_provider(session),
     )
 

@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import tiktoken
 
+from app.core.logging import get_logger
 from app.providers.tokenizers.base import TokenCounter  # noqa: F401  (re-export)
+
+logger = get_logger(__name__)
 
 
 class HeuristicTokenCounter:
@@ -50,3 +53,26 @@ def get_token_counter(model: str) -> TokenCounter:
     except KeyError:
         return HeuristicTokenCounter()
     return OpenAITokenCounter()
+
+
+class ModelRoutingTokenCounter:
+    """Choose the counter per call, because the model is only known per request.
+
+    Known OpenAI models use real tiktoken BPE; unknown models use the heuristic.
+    If the BPE file cannot be loaded (first use with no network), the heuristic
+    is used and a warning is logged, so the estimate degrades visibly instead of
+    failing the request.
+    """
+
+    def __init__(self) -> None:
+        self._heuristic = HeuristicTokenCounter()
+
+    def count(self, model: str, text: str) -> int:
+        try:
+            encoding = tiktoken.encoding_for_model(model)
+        except KeyError:  # model unknown to tiktoken: documented heuristic fallback
+            return self._heuristic.count(model, text)
+        except Exception as exc:  # noqa: BLE001 - encoding download/cache failure
+            logger.warning("tokenizer_fallback_heuristic", model=model, reason=type(exc).__name__)
+            return self._heuristic.count(model, text)
+        return len(encoding.encode(text, disallowed_special=()))
