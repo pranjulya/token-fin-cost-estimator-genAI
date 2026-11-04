@@ -18,6 +18,7 @@ from app.db.session import get_db_session
 from app.providers.llm import get_llm_provider
 from app.providers.llm.base import LLMProvider
 from app.providers.pricing.database_pricing import DatabasePricingProvider
+from app.providers.tokenizers.openai_tokenizer import AutoTokenCounter
 from app.repositories.alert_repository import AlertRepository
 from app.repositories.budget_repository import BudgetRepository
 from app.repositories.pricing_repository import PricingRepository
@@ -31,6 +32,9 @@ from app.services.generation_service import GenerationService
 from app.services.usage_service import UsageService
 
 LLMFactory = Callable[[str], LLMProvider]
+
+# Process-wide so the counter's per-model fallback cache survives across requests.
+_TOKEN_COUNTER = AutoTokenCounter()
 
 
 def _alert_service(session: AsyncSession) -> AlertService:
@@ -46,10 +50,8 @@ def _pricing_provider(session: AsyncSession) -> DatabasePricingProvider:
 
 
 async def estimator_dep(session: AsyncSession = Depends(get_db_session)) -> CostEstimator:
-    from app.providers.tokenizers.openai_tokenizer import get_token_counter
-
     return CostEstimator(
-        token_counter=get_token_counter("openai"),
+        token_counter=_TOKEN_COUNTER,
         pricing=_pricing_provider(session),
     )
 

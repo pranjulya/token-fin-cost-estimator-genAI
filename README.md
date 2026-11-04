@@ -1,47 +1,33 @@
-# Token Cost Estimator — GenAI FinOps & Gateway Service
+# Token Cost Estimator
+
+A FinOps gateway for LLM calls. It estimates the cost of a request before it is sent, enforces team and
+application budgets atomically in PostgreSQL, reconciles each estimate against actual provider usage,
+and raises alerts on threshold breaches and cost anomalies.
 
 [![CI](https://github.com/pranjulya/token-fin-cost-estimator-genAI/actions/workflows/ci.yml/badge.svg)](https://github.com/pranjulya/token-fin-cost-estimator-genAI/actions/workflows/ci.yml)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14+-336791.svg?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Type Checked: mypy strict](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/)
-[![Coverage](https://img.shields.io/badge/coverage-%3E80%25-brightgreen.svg)](docs/testing.md)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![PostgreSQL 14+](https://img.shields.io/badge/PostgreSQL-14%2B-336791)
+![mypy strict](https://img.shields.io/badge/mypy-strict-blue)
+[![Coverage 89%](https://img.shields.io/badge/coverage-89%25-brightgreen)](docs/testing.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-A high-throughput **GenAI FinOps & Gateway Service** designed to prevent LLM budget overruns before they occur. It provides pre-flight tokenization and cost estimation, enforces atomic team/application budget limits via database row-locking, reconciles estimates against actual provider usage, and surfaces spend attribution analytics and anomaly alerts.
+> A budget check that runs *after* the provider call is an invoice, not a control. This service
+> blocks an over-budget request before any money is spent.
 
-Built with **Python 3.12, FastAPI, SQLAlchemy 2.0 (Async), PostgreSQL, and Alembic**.
+## The problem
 
----
+LLM spend is easy to start and hard to stop:
 
-## 🎯 Target Audience & Learning Outcomes
+- **Overruns are found on the monthly bill.** Nothing stops a runaway job mid-month.
+- **Concurrent requests race past the limit.** Two requests both see $1 left, and both spend it.
+- **Estimates drift from reality.** Nobody compares predicted tokens with what the provider actually billed.
+- **History gets rewritten.** A price change silently re-values last month's report.
 
-### Who Is This For?
-- **Engineers & Architects** — evaluating production FinOps patterns for enterprise GenAI applications (preflight evaluation, reserve-call-settle lifecycle, atomic concurrency control).
-- **Backend Developers & Students** — studying real-world asynchronous Python architectures, strict typing (`mypy --strict`), clean hexagonal boundaries, and zero-drift `Decimal` accounting.
-- **Interview & System Design Preparation** — explore [`Learning/`](Learning/) for a structured walkthrough and system design Q&A.
+## How it works
 
-> **Budget Preflight vs. Execution:** `POST /v1/cost/estimate` is **evaluate-only** — it computes token costs and returns a budget envelope (`ALLOW`/`WARN`/`CRITICAL`/`BLOCK`) without locking or reserving funds. `POST /v1/generate` is the atomic execution path that reserves spend, calls the provider, and settles the ledger.
-
----
-
-## ⚡ Key Architecture & Engineering Highlights
-
-| Capability | Technical Implementation | Why It Matters |
-|---|---|---|
-| **Decimal-Safe Financial Math** | Custom `Decimal` fixed-point arithmetic (`src/app/utils/money.py`) | Eliminates binary floating-point rounding drift across millions of micro-transactions. |
-| **Atomic Budget Reservation** | PostgreSQL `SELECT ... FOR UPDATE` row-level locks on budget periods | Guarantees strict budget ceilings under high concurrent traffic without distributed race conditions. |
-| **Self-Healing Sweeper** | Two-phase lease-based background recovery worker (`reservation_sweeper`) | Automatically releases orphaned spend reservations if upstream LLM calls or client processes crash. |
-| **Immutable Pricing History** | Foreign key snapshotting on `pricing_version` per usage record | Historical financial reporting remains accurate even when model pricing changes over time. |
-| **Zero Data Leakage** | Prompt/completion content is processed ephemerally in-memory and never persisted | Complete compliance with enterprise privacy standards and SOC2/HIPAA data hygiene. |
-| **Clean Hexagonal Architecture** | Strict boundary separation between API, pure domain logic, and DB drivers | Providers (`TokenCounter`, `PricingProvider`, `LLMProvider`) sit behind `Protocol` interfaces. |
-
----
-
-## 🏗️ System Architecture & Lifecycle
-
-### Request Flow: Preflight Estimate vs. Guaranteed Generation
+`POST /v1/cost/estimate` is **evaluate-only**. It tokenizes the input, prices it, and returns a
+budget envelope (`ALLOW` / `WARN` / `CRITICAL` / `BLOCK`) without reserving anything.
+`POST /v1/generate` is the guarded execution path: **reserve → call the provider → settle**.
 
 ```mermaid
 sequenceDiagram
@@ -76,73 +62,108 @@ sequenceDiagram
     end
 ```
 
----
+| Capability | Implementation | Why it matters |
+|---|---|---|
+| Exact money math | `Decimal` fixed-point arithmetic (`src/app/utils/money.py`), serialized as strings | No binary floating-point drift across many small charges |
+| Atomic budget reservation | PostgreSQL `SELECT ... FOR UPDATE` on the budget period row | Concurrent requests cannot both spend the last dollar |
+| Leaked-reservation recovery | `scripts/expire_reservations.py` (dry-run by default, `--apply` to release); run it on a schedule | A crash between reserve and settle does not shrink the budget until the period ends |
+| Immutable pricing history | Every usage record stores its `pricing_version` | Past reports stay correct after a price change |
+| No prompt persistence | Prompt and completion text are processed in memory and never written to the database | Spend data can be shared without exposing content |
+| Ports and adapters | `TokenCounter`, `PricingProvider` and `LLMProvider` sit behind `Protocol` interfaces | You can add a provider without touching the budget logic |
 
-## 🚀 Quick Start
-
-### Docker Compose (Recommended)
-
-Spins up the FastAPI application and a dedicated PostgreSQL 14 instance with automatic health checks and idempotent pricing seeding:
+## See it work (no API key, no cost)
 
 ```bash
-# Clone and boot the environment
+make setup     # install, create databases, migrate, seed pricing
+make demo      # three scenarios against an in-process mock LLM
+```
+
+```text
+== Beat 1: Normal request ==
+  [estimate] status=200 budget=ALLOW cost=0.0010175
+  [usage] status=201 actual_cost=0.0003375 variance=0.0003375
+
+== Beat 2: Large request (blocked before provider) ==
+  [estimate] status=200 budget=BLOCK
+  [generate] status=403 code=BUDGET_EXCEEDED
+
+== Beat 3: Multiple requests -> threshold + alert ==
+  [summary] requests=7 cost=0.0023625000
+  [by-model] model=gpt-4o cost=0.0023625000
+  [alerts] count=1
+  [ack] alert_id=1 -> 200
+```
+
+In beat 2 the request is rejected with `403` **before** the provider is called. The demo asserts that
+the mock LLM receives zero calls. The demo resets its schema on every run, so it uses a throwaway
+`<your_db_name>_demo` database and never touches your main one. Run `make setup` first, or point
+`APP_DATABASE_URL` at your Postgres.
+
+## Quickstart
+
+### Docker Compose
+
+Starts the API and PostgreSQL 14 with health checks and idempotent pricing seeding:
+
+```bash
 git clone https://github.com/pranjulya/token-fin-cost-estimator-genAI.git
 cd token-fin-cost-estimator-genAI
 docker compose up --build
 ```
 
-- **OpenAPI Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Health Probes:** [http://localhost:8000/health](http://localhost:8000/health) & `/ready`
-- **Prometheus Metrics:** [http://localhost:8000/metrics](http://localhost:8000/metrics)
-- **Default Auth Keys:** `dev-user-key` (standard) / `dev-admin-key` (administrative endpoints)
+- OpenAPI docs: <http://localhost:8000/docs>
+- Health: <http://localhost:8000/health> and `/ready`
+- Prometheus metrics: <http://localhost:8000/metrics>
+- Dev keys: `dev-user-key` (standard) and `dev-admin-key` (admin endpoints)
 
-### Local Development (macOS / Linux)
+### Local development (macOS / Linux)
 
-Requires Python 3.12, PostgreSQL 14+, and [uv](https://docs.astral.sh/uv/):
-
-```bash
-# 1. Install dependencies, create databases, migrate, and seed pricing
-make setup
-
-# 2. Start the local development server with auto-reload
-make run
-```
-
----
-
-## 🎬 Interactive Portfolio Demo
-
-Run the self-contained portfolio demo to verify all core flows (normal usage, strict budget rejection, aggregation, and anomaly alerts) using an in-process mock LLM without spending real money or requiring third-party API keys:
+Requires Python 3.12, PostgreSQL 14+ and [uv](https://docs.astral.sh/uv/). On Windows, use Docker Compose or WSL2.
 
 ```bash
-make demo
+make setup     # install dependencies, create databases, migrate, seed pricing
+make run       # dev server on :8000 with auto-reload
 ```
 
-```text
-== Beat 1: Normal request ==
-  [estimate] status=200 budget=ALLOW cost=0.00101750
-  [usage] status=201 actual_cost=0.00033750 variance=0.00033750
+`make setup` runs `psql` as your OS user with no password. If your Postgres needs a password, or runs
+somewhere else, export `PGHOST`/`PGUSER`/`PGPASSWORD` for `psql` and set both URLs first:
 
-== Beat 2: Large request (blocked before provider) ==
-  [estimate] status=200 budget=BLOCK
-  [generate] status=403 code=BUDGET_EXCEEDED (Zero upstream provider calls made)
-
-== Beat 3: Multiple requests -> threshold + alert ==
-  [summary] requests=7 cost=0.00236250
-  [by-model] model=gpt-4o cost=0.00236250
-  [alerts] count=1 (BUDGET_THRESHOLD alert generated)
-  [ack] alert_id=1 -> 200 OK
+```bash
+export APP_DATABASE_URL=postgresql+psycopg://USER:PASS@localhost:5432/token_cost_estimator
+export TEST_DATABASE_URL=postgresql+psycopg://USER:PASS@localhost:5432/token_cost_estimator_test
+export APP_API_KEYS=dev-user-key APP_ADMIN_API_KEYS=dev-admin-key
 ```
 
----
+`make run` needs `APP_API_KEYS` and `APP_ADMIN_API_KEYS` (or a `.env` copied from `.env.example`).
+Without keys, every `/v1` call returns `401`.
 
-## 📡 API Surface & Usage Examples
+> **Token counting needs a one-time download.** `tiktoken` fetches its encoding files on first use, and
+> the Docker image bakes them in. For a local install, run `make run` once with internet access. If the
+> download fails, the service falls back to an estimate of about 4 characters per token and logs a
+> `tiktoken_unavailable_using_heuristic` warning. It never fails the request.
+
+## API examples
+
+<!-- Every curl block below is executed in CI by scripts/readme_smoke.py. Keep them runnable. -->
 
 All `/v1/*` routes require an `X-API-Key` or `Authorization: Bearer <key>` header.
 
-### 1. Pre-flight Cost Estimation
-Tokenize prompt and calculate cost against current active model rates:
+### 0. Create a Budget (admin key, one time)
 
+Without a budget, the estimate returns `"budget": {"status": "ENABLED", ...}` with no limits. Create a $10 monthly STRICT budget for the `analytics` team first:
+
+```bash
+curl -X POST http://localhost:8000/v1/budgets \
+  -H "X-API-Key: dev-admin-key" \
+  -H "Content-Type: application/json" \
+  -d '{"scope_type": "TEAM", "scope_id": "analytics", "period_type": "MONTHLY",
+       "limit_amount": "10.00", "enforcement_mode": "STRICT"}'
+```
+
+### 1. Pre-flight Cost Estimation
+Tokenize prompt and calculate cost against current active model rates. The budget is evaluated but nothing is reserved:
+
+<!-- smoke-shape -->
 ```bash
 curl -X POST http://localhost:8000/v1/cost/estimate \
   -H "X-API-Key: dev-user-key" \
@@ -158,20 +179,33 @@ curl -X POST http://localhost:8000/v1/cost/estimate \
 
 ```json
 {
+  "request_id": "req_...",
+  "provider": "openai",
+  "model": "gpt-4o",
   "estimated_input_tokens": 10,
   "estimated_output_tokens": 500,
-  "estimated_input_cost": "0.00005000",
-  "estimated_output_cost": "0.00500000",
-  "estimated_total_cost": "0.00505000",
+  "estimated_input_cost": "0.000025",
+  "estimated_cached_input_cost": "0",
+  "estimated_output_cost": "0.005",
+  "estimated_total_cost": "0.005025",
   "currency": "USD",
   "pricing_version": 1,
-  "budget_status": "ALLOW"
+  "budget": {
+    "status": "ALLOW",
+    "remaining_before_request": "10",
+    "remaining_after_estimate": "9.994975"
+  }
 }
 ```
 
-### 2. End-to-End Generation (Atomic Budget Lock)
-Executes budget reservation, makes the LLM call, records actual usage, and settles spend:
+`estimated_input_tokens` is exact (tiktoken) when the encoding files are available. In the heuristic fallback it is about 4 characters per token, so you may see 16 instead of 10 for this prompt. The numbers above are illustrative; request IDs and token counts vary.
 
+### 2. End-to-End Generation (Atomic Budget Lock)
+Executes budget reservation, makes the LLM call, records actual usage, and settles spend.
+
+This endpoint spends real money, so it is **off by default** (`GENERATION_DISABLED` error). To enable it, set `APP_GENERATE_ENABLED=true` and `APP_OPENAI_API_KEY=sk-...` (for Docker Compose, edit the `app` service environment in `docker-compose.yml`), then restart. Use `make demo` to see the full flow with a mock LLM and no key.
+
+<!-- smoke-expect: 503 GENERATION_DISABLED -->
 ```bash
 curl -X POST http://localhost:8000/v1/generate \
   -H "X-API-Key: dev-user-key" \
@@ -180,9 +214,9 @@ curl -X POST http://localhost:8000/v1/generate \
   -d '{
     "provider": "openai",
     "model": "gpt-4o",
-    "prompt": "Explain raft consensus in two sentences.",
-    "expected_output_tokens": 100,
-    "team_id": "core-infra"
+    "input": "Explain raft consensus in two sentences.",
+    "max_output_tokens": 100,
+    "team_id": "analytics"
   }'
 ```
 
@@ -200,70 +234,60 @@ curl http://localhost:8000/v1/cost/by-team -H "X-API-Key: dev-user-key"
 curl http://localhost:8000/v1/usage/summary -H "X-API-Key: dev-user-key"
 ```
 
----
+The full reference is in [`docs/api.md`](docs/api.md).
 
-## 📊 Observability & Prometheus Metrics
+## Observability
 
-Exposed at `/metrics` (Prometheus text format) with zero-cost scraping overhead:
+Prometheus metrics are exposed at `/metrics`:
 
-| Metric | Type | Labels | Purpose |
-|---|---|---|---|
-| `llm_requests_total` | Counter | `provider`, `model`, `status` | Total request volume |
-| `llm_cost_total` | Counter | `provider`, `model`, `team_id` | Cumulative realized financial spend |
-| `llm_estimated_cost_total` | Counter | `provider`, `model` | Pre-flight estimated spend |
-| `llm_budget_rejections_total` | Counter | `budget_id`, `scope` | Requests blocked before provider execution |
-| `llm_cost_anomaly_total` | Counter | `model`, `severity` | Number of cost anomaly spikes detected |
-| `llm_request_duration_seconds` | Histogram | `endpoint`, `status` | End-to-end API latency distribution |
+| Metric | Type | Labels |
+|---|---|---|
+| `llm_requests_total` | Counter | `provider`, `model`, `endpoint`, `status` |
+| `llm_request_duration_seconds` | Histogram | `provider`, `model`, `endpoint`, `status` |
+| `llm_input_tokens_total`, `llm_output_tokens_total` | Counter | provider and model |
+| `llm_cost_total`, `llm_estimated_cost_total` | Counter | provider and model |
+| `llm_budget_rejections_total` | Counter | `provider`, `model`, `reason` |
+| `llm_cost_anomaly_total` | Counter | provider and model |
 
----
+Structured logs (JSON in production, readable console output in development) carry a `request_id` and `correlation_id` on every line. See [`docs/observability.md`](docs/observability.md).
 
-## 🛡️ Security & Rate Limiting
+## Security
 
-- **Scope Separation:** Granular separation between standard `user` tokens and `admin` tokens (governing pricing updates, budget administration, and alert lifecycle).
-- **Key Hashing:** Optional `APP_AUTH_HASH_KEYS=true` allows storing only SHA-256 digests in environment/secrets managers.
-- **In-Memory Token Bucket Rate Limiting:** Enforces independent per-key burst/rate thresholds (`APP_RATE_LIMIT_PER_MINUTE` and `APP_RATE_LIMIT_GENERATE_PER_MINUTE`).
-- **Structured Log Redaction:** Structlog processor automatically redacts authorization headers, API keys, and sensitive payloads.
+- **Two key scopes.** `user` keys call the API; `admin` keys also manage pricing, budgets and alerts.
+  Empty keys do **not** disable auth.
+- **Hashed keys (optional).** With `APP_AUTH_HASH_KEYS=true`, configuration stores only SHA-256 digests.
+- **Rate limits.** A per-key token bucket (`APP_RATE_LIMIT_PER_MINUTE`, `APP_RATE_LIMIT_GENERATE_PER_MINUTE`).
+- **Log redaction.** A structlog processor replaces secret-shaped values with `[REDACTED]`.
+- **Generation is off by default.** `/v1/generate` spends real money, so it needs `APP_GENERATE_ENABLED=true` and a provider key.
 
----
+Details are in [`docs/security.md`](docs/security.md).
 
-## 🏛️ Architecture Decision Records (ADRs)
+## Key engineering decisions
 
-Key technical tradeoffs and architectural choices are thoroughly documented in [`docs/adr/`](docs/adr/):
+| Decision | Record |
+|---|---|
+| Money is `Decimal`; IEEE-754 floats are banned from financial math | [ADR-001](docs/adr/ADR-001-decimal-money.md) |
+| PostgreSQL is the system of record for the ledger and budgets | [ADR-002](docs/adr/ADR-002-postgres-system-of-record.md) |
+| `FOR UPDATE` row locks instead of Redis counters, to avoid dual-write inconsistency | [ADR-003](docs/adr/ADR-003-postgres-for-update-not-redis.md) |
+| Pricing providers are decoupled from estimation | [ADR-004](docs/adr/ADR-004-pricing-provider-separated.md) |
+| Each usage record snapshots its pricing version | [ADR-005](docs/adr/ADR-005-pricing-version-on-usage.md) |
+| Budgets fail closed when state is uncertain | [ADR-006](docs/adr/ADR-006-fail-closed-budget.md) |
+| Raw prompts are never persisted | [ADR-007](docs/adr/ADR-007-no-raw-prompt-persistence.md) |
 
-- **[ADR-001: Decimal Money Representation](docs/adr/ADR-001-decimal-money.md)** — Why IEEE-754 floats are banned for financial math.
-- **[ADR-002: PostgreSQL as System of Record](docs/adr/ADR-002-postgres-system-of-record.md)** — ACID guarantees for ledger and budgets.
-- **[ADR-003: Postgres `FOR UPDATE` vs. Redis for Budgets](docs/adr/ADR-003-postgres-for-update-not-redis.md)** — Eliminating dual-write inconsistency.
-- **[ADR-004: Decoupled Pricing Providers](docs/adr/ADR-004-pricing-provider-separated.md)** — Extensible multi-model pricing architecture.
-- **[ADR-005: Pricing Snapshot Versioning on Usage](docs/adr/ADR-005-pricing-version-on-usage.md)** — Guaranteeing audit stability against rate changes.
-- **[ADR-006: Fail-Closed Budget Policy](docs/adr/ADR-006-fail-closed-budget.md)** — Guaranteeing budget protection during edge cases.
-- **[ADR-007: Zero Raw Prompt Persistence](docs/adr/ADR-007-no-raw-prompt-persistence.md)** — Privacy-first data retention policy.
-
----
-
-## 🧪 Testing & Quality Assurance
-
-The codebase enforces strict quality gates on every commit and pull request:
+## Quality
 
 ```bash
-# Run complete test suite (Unit, Integration, Contract against live Postgres)
-make test
-
-# Enforce strict 80%+ branch test coverage gate
-make coverage
-
-# Static type analysis with mypy strict mode
-make typecheck
-
-# Code formatting and linting checks with ruff
-make lint
-
-# Dependency vulnerability and secret scanning
-make security-check
+make lint            # ruff check + ruff format --check
+make typecheck       # mypy strict
+make test            # unit, integration and contract tests against real Postgres
+make coverage        # gate: 80% (currently about 89%)
+make security-check  # dependency audit and committed-secret scan
 ```
 
----
+CI also boots the Docker image and runs every `curl` example in this README against it
+(`scripts/readme_smoke.py`), so the documentation cannot silently drift from the API.
 
-## 📁 Repository Structure
+## Project layout
 
 ```
 token-fin-cost-estimator-genAI/
@@ -290,8 +314,22 @@ token-fin-cost-estimator-genAI/
 └── pyproject.toml       # Modern Python packaging with uv and hatchling
 ```
 
----
+## Limitations
 
-## 📄 License
+- **One provider.** Only OpenAI tokenization and generation are implemented. Other models fall back to
+  the heuristic token estimate.
+- **The reservation sweeper is not scheduled for you.** Run `scripts/expire_reservations.py --apply`
+  from cron or a job runner.
+- **Rate limits are per process.** The in-memory token bucket does not coordinate across replicas.
 
-Distributed under the [MIT License](LICENSE). Built for high-reliability production GenAI infrastructure.
+## Documentation
+
+[PRD](docs/prd.md) · [Architecture](docs/architecture.md) · [Database](docs/database.md) ·
+[API](docs/api.md) · [Production scenarios](docs/production-scenarios.md) ·
+[Reservation sweeper](docs/reservation-sweeper.md) · [Testing](docs/testing.md) ·
+[Roadmap](docs/roadmap.md) · [ADRs](docs/adr/README.md) · [Learning guide](Learning/README.md) ·
+[Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+
+## License
+
+[MIT](LICENSE)

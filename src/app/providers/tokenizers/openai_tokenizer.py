@@ -8,9 +8,18 @@ tiktoken does not know, and a registry that picks the right one.
 
 from __future__ import annotations
 
+import time
+
+import structlog
 import tiktoken
 
 from app.providers.tokenizers.base import TokenCounter  # noqa: F401  (re-export)
+
+logger = structlog.get_logger(__name__)
+
+# After a failed encoding load (e.g. no network for the first tiktoken
+# download), skip real BPE for this long before trying again.
+_RETRY_AFTER_SECONDS = 60.0
 
 
 class HeuristicTokenCounter:
@@ -50,3 +59,30 @@ def get_token_counter(model: str) -> TokenCounter:
     except KeyError:
         return HeuristicTokenCounter()
     return OpenAITokenCounter()
+
+
+class AutoTokenCounter:
+    """Per-request counter: real BPE when available, heuristic otherwise.
+
+    The model comes from each request, so ``gpt-4o`` is counted with its real
+    encoding. Unknown models fall back to the heuristic for good. A failure to
+    load the encoding (tiktoken downloads it on first use unless
+    ``TIKTOKEN_CACHE_DIR`` is pre-warmed) falls back too, and is retried after
+    ``_RETRY_AFTER_SECONDS`` so a slow network never fails or stalls estimates.
+    """
+
+    def __init__(self) -> None:
+        self._heuristic = HeuristicTokenCounter()
+        self._unknown_models: set[str] = set()
+        self._retry_at: dict[str, float] = {}
+
+    def count(self, model: str, text: str) -> int:
+        if model not in self._unknown_models and time.monotonic() >= self._retry_at.get(model, 0.0):
+            try:
+                return OpenAITokenCounter().count(model, text)
+            except ValueError:
+                self._unknown_models.add(model)
+            except Exception as exc:
+                self._retry_at[model] = time.monotonic() + _RETRY_AFTER_SECONDS
+                logger.warning("tiktoken_unavailable_using_heuristic", model=model, error=str(exc))
+        return self._heuristic.count(model, text)
